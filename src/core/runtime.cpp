@@ -522,6 +522,107 @@ std::string Sha256Hex(const std::string& data) {
   return out;
 }
 
+bool JsonBoolAt(const JsonValue& root, std::string_view pointer, bool default_value) {
+  const auto* v = sre::ResolvePointer(root, pointer);
+  if (!v || !v->IsBool()) {
+    return default_value;
+  }
+  return v->AsBool();
+}
+
+std::string JsonStringAt(const JsonValue& root, std::string_view pointer, std::string default_value) {
+  const auto* v = sre::ResolvePointer(root, pointer);
+  if (!v || !v->IsString()) {
+    return default_value;
+  }
+  if (v->AsString().empty()) {
+    return default_value;
+  }
+  return v->AsString();
+}
+
+JsonValue::Array JsonArrayFromStrings(const std::vector<std::string>& values) {
+  JsonValue::Array arr;
+  for (const auto& v : values) {
+    arr.items.emplace_back(v);
+  }
+  return arr;
+}
+
+JsonValue BuildExecutionDag(const JsonValue& plan) {
+  JsonValue::Array nodes;
+  const auto* chains = sre::ResolvePointer(plan, "/chains");
+  if (chains && chains->IsObject()) {
+    for (const auto& [chain_id, chain_spec] : chains->AsObject().fields) {
+      if (!chain_spec.IsObject()) {
+        continue;
+      }
+      const auto* steps = ObjectGet(chain_spec, "steps");
+      if (!steps || !steps->IsArray()) {
+        continue;
+      }
+      for (size_t i = 0; i < steps->AsArray().items.size(); ++i) {
+        const auto& step = steps->AsArray().items[i];
+        if (!step.IsObject()) {
+          continue;
+        }
+        JsonValue::Object node;
+        node.fields["id"] = chain_id + "#" + std::to_string(i);
+        node.fields["chain_id"] = chain_id;
+        node.fields["step_index"] = static_cast<double>(i);
+        const auto* kind = ObjectGet(step, "kind");
+        node.fields["kind"] = kind && kind->IsString() ? kind->AsString() : "unknown";
+
+        JsonValue::Array depends_on;
+        if (i > 0) {
+          depends_on.items.emplace_back(chain_id + "#" + std::to_string(i - 1));
+        }
+        node.fields["depends_on"] = JsonValue(std::move(depends_on));
+        nodes.items.emplace_back(std::move(node));
+      }
+    }
+  }
+
+  JsonValue::Object dag;
+  dag.fields["kind"] = "execution_dag";
+  dag.fields["nodes"] = JsonValue(std::move(nodes));
+  return JsonValue(std::move(dag));
+}
+
+JsonValue BuildLineageDag(const JsonValue& plan) {
+  JsonValue::Array nodes;
+  const auto* fields = sre::ResolvePointer(plan, "/outputs/dataset/fields");
+  if (fields && fields->IsArray()) {
+    for (size_t i = 0; i < fields->AsArray().items.size(); ++i) {
+      const auto& f = fields->AsArray().items[i];
+      if (!f.IsObject()) {
+        continue;
+      }
+      JsonValue::Object node;
+      const auto* id = ObjectGet(f, "id");
+      const auto* from = ObjectGet(f, "from");
+      node.fields["id"] = id && id->IsString() ? id->AsString() : ("field_" + std::to_string(i));
+      node.fields["from"] = from && from->IsString() ? from->AsString() : "";
+      node.fields["field_index"] = static_cast<double>(i);
+      nodes.items.emplace_back(std::move(node));
+    }
+  }
+
+  JsonValue::Object dag;
+  dag.fields["kind"] = "lineage_dag";
+  dag.fields["nodes"] = JsonValue(std::move(nodes));
+  return JsonValue(std::move(dag));
+}
+
+void WriteJsonFile(const std::filesystem::path& path, const JsonValue& value) {
+  std::filesystem::create_directories(path.parent_path());
+  std::ofstream out(path);
+  if (!out) {
+    throw std::runtime_error("Failed to write JSON file: " + path.string());
+  }
+  out << DumpCanonicalJson(value) << "\n";
+}
+
 }  // namespace
 
 namespace sre {
@@ -970,6 +1071,57 @@ int Engine::ValidatePlanFile(
   }
   sink.WriteJsonl(diagnostics_jsonl);
   sink.WriteHumanSummary(diagnostics_summary);
+
+  if (result.status.ok) {
+    const bool artifacts_enabled = JsonBoolAt(result.cnf_plan, "/outputs/artifacts/enabled", true);
+    const bool allow_fs_write = JsonBoolAt(result.cnf_plan, "/execution/permissions/allow_filesystem_write", false);
+    if (artifacts_enabled && allow_fs_write) {
+      std::filesystem::path base_dir = JsonStringAt(result.cnf_plan, "/outputs/artifacts/base_dir", "artifacts");
+      if (base_dir.is_relative()) {
+        base_dir = repo_root_ / base_dir;
+      }
+      std::filesystem::create_directories(base_dir);
+
+      const JsonValue execution_dag = BuildExecutionDag(result.cnf_plan);
+      const JsonValue lineage_dag = BuildLineageDag(result.cnf_plan);
+      const std::string plan_hash = HashCanonicalPlan(result.cnf_plan);
+      const std::string execution_hash = HashCanonicalPlan(execution_dag);
+      const std::string lineage_hash = HashCanonicalPlan(lineage_dag);
+
+      WriteJsonFile(base_dir / "execution_dag.json", execution_dag);
+      WriteJsonFile(base_dir / "lineage_dag.json", lineage_dag);
+
+      const bool write_manifest = JsonBoolAt(result.cnf_plan, "/outputs/artifacts/write_run_manifest", true);
+      const bool write_metrics = JsonBoolAt(result.cnf_plan, "/outputs/artifacts/write_metrics_summary", true);
+
+      if (write_manifest) {
+        std::vector<std::string> layers_validated;
+        if (!only_layers.empty()) {
+          layers_validated = only_layers;
+        } else {
+          for (const auto& m : manifests_) {
+            layers_validated.push_back(m.layer_id);
+          }
+        }
+
+        JsonValue::Object manifest;
+        manifest.fields["plan_cnf_hash"] = plan_hash;
+        manifest.fields["execution_dag_hash"] = execution_hash;
+        manifest.fields["lineage_dag_hash"] = lineage_hash;
+        manifest.fields["diagnostic_count"] = static_cast<double>(result.diagnostics.size());
+        manifest.fields["layers_validated"] = JsonValue(JsonArrayFromStrings(layers_validated));
+        WriteJsonFile(base_dir / "run_manifest.json", JsonValue(std::move(manifest)));
+      }
+
+      if (write_metrics) {
+        JsonValue::Object metrics;
+        metrics.fields["diagnostic_count"] = static_cast<double>(result.diagnostics.size());
+        metrics.fields["error_count"] = static_cast<double>(sink.HasErrors() ? 1 : 0);
+        metrics.fields["status"] = result.status.ok ? "ok" : "error";
+        WriteJsonFile(base_dir / "metrics_summary.json", JsonValue(std::move(metrics)));
+      }
+    }
+  }
   return result.status.ok ? 0 : 2;
 }
 
