@@ -1,0 +1,12 @@
+build/
+artifacts/
+*.obj
+*.o
+*.exp
+*.lib
+*.ilk
+*.pdb
+
+# Local Sierra Chart SDK/source mirror used for compilation.
+ACS_Source/
+
