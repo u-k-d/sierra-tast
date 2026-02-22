@@ -24,6 +24,26 @@ Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSin
         "contracts/L6_semantics_integrity.manifest.json");
     ok = false;
   };
+  auto emit_policy = [&](std::string check_id, std::string reason, std::string expected, std::string actual, std::string pointer, std::string on_violation) {
+    if (on_violation == "error") {
+      emit(std::move(check_id), std::move(reason), std::move(expected), std::move(actual), std::move(pointer));
+      return;
+    }
+    Diagnostic d;
+    d.code = "E_SEM_INTEGRITY_RULE_FAILED";
+    d.layer_id = "semantics_integrity";
+    d.check_id = std::move(check_id);
+    d.group_id = "CHKGRP_PLAN_AST_SHAPE";
+    d.reason = std::move(reason);
+    d.expected = std::move(expected);
+    d.actual = std::move(actual);
+    d.blame_pointers = {std::move(pointer)};
+    d.remediation = on_violation == "skip_permutation" ? "Skip violating permutation and continue with policy-compliant set."
+                                                        : "Adjust permutation policy or study mode.";
+    d.severity = "warn";
+    d.source = "contracts/L6_semantics_integrity.manifest.json";
+    diag.Emit(d);
+  };
 
   const auto* require_readiness = plan_view.Get("/validation/require_sierra_readiness_contract");
   if (require_readiness && require_readiness->IsBool() && require_readiness->AsBool()) {
@@ -127,6 +147,9 @@ Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSin
   const auto* perm_policy = plan_view.Get("/validation/sierra_study_input_permute_policy");
   const bool managed_only_policy =
       (!perm_policy) || (perm_policy->IsString() && perm_policy->AsString() == "managed_only");
+  const auto* on_violation_ptr = plan_view.Get("/validation/sierra_study_input_permute_on_violation");
+  const std::string on_violation =
+      on_violation_ptr && on_violation_ptr->IsString() ? on_violation_ptr->AsString() : "error";
   const auto* permute = plan_view.Get("/parameters/permute");
   if (permute && permute->IsArray()) {
     for (size_t i = 0; i < permute->AsArray().items.size(); ++i) {
@@ -152,23 +175,25 @@ Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSin
         if (!study_key.empty()) {
           const auto* study_mode = plan_view.Get("/studies/" + study_key + "/mode");
           if (study_mode && study_mode->IsString() && study_mode->AsString() == "bind") {
-            emit(
+            emit_policy(
                 "CHK_SEM_PERMUTE_BIND_MODE_DRIFT",
                 "study_input permutation targets bind-mode study under managed_only policy.",
                 "managed study mode or allowlist_bind_mode policy",
                 "bind",
-                "/studies/" + study_key + "/mode");
+                "/studies/" + study_key + "/mode",
+                on_violation);
           }
         }
       }
 
       if (perm_policy && perm_policy->IsString() && perm_policy->AsString() == "disabled") {
-        emit(
+        emit_policy(
             "CHK_SEM_PERMUTE_DISABLED_MUTATION",
             "study_input permutation declared while permutation policy is disabled.",
             "no study_input permutation items",
             "study_input permutation present",
-            "/parameters/permute/" + std::to_string(i));
+            "/parameters/permute/" + std::to_string(i),
+            on_violation);
       }
     }
   }
