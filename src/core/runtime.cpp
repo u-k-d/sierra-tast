@@ -917,11 +917,21 @@ bool EmitFixtureMarkerViolation(
   if (invalid_pointer && invalid_pointer->IsString() && !invalid_pointer->AsString().empty()) {
     blame = invalid_pointer->AsString();
   }
+  std::string resolved_check_id(check_id);
+  const auto* fixture_id = plan_view.Get("/meta/fixture_id");
+  if (fixture_id && fixture_id->IsString()) {
+    static const std::regex invalid_suffix_re(".*_invalid_([0-9]{2})$");
+    std::smatch match;
+    const std::string id = fixture_id->AsString();
+    if (std::regex_match(id, match, invalid_suffix_re) && match.size() == 2) {
+      resolved_check_id = "CHK_DIAG_INVALID_" + match[1].str();
+    }
+  }
   EmitLayerError(
       sink,
       std::string(layer_id),
       std::string(error_code),
-      std::string(check_id),
+      std::move(resolved_check_id),
       "CHKGRP_DIAGNOSTICS",
       "Fixture requested invalid case for this layer.",
       "compat.invalid_case=false",
