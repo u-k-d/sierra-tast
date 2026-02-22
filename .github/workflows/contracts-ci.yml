@@ -1,0 +1,20 @@
+name: contracts-ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate contracts and fixtures
+        run: python tools/validate_contracts.py
+      - name: Regenerate manifests from docs
+        run: python tools/contractgen.py
+      - name: Ensure no drift after generation
+        run: git diff --exit-code

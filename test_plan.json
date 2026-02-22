@@ -1,0 +1,686 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/sierra-research-engine/plan.bundle.sierra_runtime.v2_6_2.json",
+  "title": "Sierra Research Engine Plan Bundle (Sierra Runtime) v2.6.2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "plan_kind",
+    "plan_io",
+    "universe",
+    "execution",
+    "studies",
+    "chains",
+    "outputs"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 262
+    },
+    "plan_kind": {
+      "type": "string",
+      "const": "sierra_research_engine.plan"
+    },
+    "plan_io": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format"
+      ],
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": [
+            "json"
+          ]
+        },
+        "encoding": {
+          "type": "string",
+          "enum": [
+            "utf-8"
+          ],
+          "default": "utf-8"
+        },
+        "allow_comments": {
+          "type": "boolean",
+          "default": false
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "default": 500000
+        }
+      }
+    },
+    "compat": {
+      "type": "object",
+      "additionalProperties": true,
+      "default": {}
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true,
+      "default": {}
+    },
+    "extensions": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "default": []
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "require_refs_resolve": {
+          "type": "boolean",
+          "default": true
+        },
+        "require_gates_exist": {
+          "type": "boolean",
+          "default": true
+        },
+        "require_studies_exist": {
+          "type": "boolean",
+          "default": true
+        },
+        "require_sierra_readiness_contract": {
+          "type": "boolean",
+          "default": true
+        },
+        "prefer_typed_step_io_refs": {
+          "type": "boolean",
+          "default": true
+        },
+        "sierra_study_input_permute_policy": {
+          "type": "string",
+          "enum": [
+            "managed_only",
+            "allowlist_bind_mode",
+            "disabled"
+          ],
+          "default": "managed_only"
+        },
+        "sierra_study_input_permute_on_violation": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "skip_permutation"
+          ],
+          "default": "error"
+        },
+        "sierra_bind_mode_allowlist": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "study_key"
+            ],
+            "properties": {
+              "study_key": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "native_setter",
+                  "managed_bridge"
+                ],
+                "default": "native_setter"
+              },
+              "inputs_allow": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                },
+                "default": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "universe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "inline",
+            "file"
+          ]
+        },
+        "symbols": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "file": {
+          "type": "object"
+        },
+        "timeframe": {
+          "type": "string",
+          "pattern": "^[0-9]+(s|m|h|d|w)$"
+        },
+        "date_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "start",
+            "end"
+          ],
+          "properties": {
+            "start": {
+              "type": "string",
+              "format": "date"
+            },
+            "end": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "const": "inline"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "symbols"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "const": "file"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "file"
+            ]
+          }
+        }
+      ]
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "worker_charts",
+        "backend"
+      ],
+      "properties": {
+        "controller_chart": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "worker_charts": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "minItems": 1
+        },
+        "permissions": {
+          "type": "object",
+          "additionalProperties": false,
+          "default": {},
+          "properties": {
+            "allow_filesystem_write": {
+              "type": "boolean",
+              "default": false
+            },
+            "allow_network": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        },
+        "sentinel": {
+          "type": "object",
+          "additionalProperties": false,
+          "default": {},
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "study_id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "subgraph": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "slot": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 9
+            },
+            "ready_value": {
+              "type": "number",
+              "default": 1.0
+            },
+            "timeout_cycles": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 30
+            }
+          }
+        },
+        "backend": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "sierra_chart"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "sierra_chart"
+              ],
+              "default": "sierra_chart"
+            },
+            "sierra_chart": {
+              "type": "object",
+              "additionalProperties": false,
+              "default": {},
+              "properties": {
+                "scheduler_mode": {
+                  "type": "string",
+                  "enum": [
+                    "serial",
+                    "worker_pool"
+                  ],
+                  "default": "serial"
+                },
+                "layout_contract": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "default": {},
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": true
+                    },
+                    "controller_chart": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "workers": {
+                      "type": "array",
+                      "default": [],
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "chart_number"
+                        ],
+                        "properties": {
+                          "chart_number": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "required_studies": {
+                            "type": "array",
+                            "default": [],
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "study_key"
+                              ],
+                              "properties": {
+                                "study_key": {
+                                  "type": "string",
+                                  "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                                },
+                                "require_outputs": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "default": []
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "readiness": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "default": {
+                        "mode": "sentinel"
+                      },
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "sentinel",
+                            "gate"
+                          ],
+                          "default": "sentinel"
+                        },
+                        "ready_gate": {
+                          "type": "string",
+                          "pattern": "^@gate\\.[a-z][a-z0-9_]{0,63}$"
+                        }
+                      },
+                      "allOf": [
+                        {
+                          "if": {
+                            "properties": {
+                              "mode": {
+                                "const": "gate"
+                              }
+                            }
+                          },
+                          "then": {
+                            "required": [
+                              "ready_gate"
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "studies": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode",
+          "study_id",
+          "outputs"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "bind",
+              "managed"
+            ]
+          },
+          "chart_ref": {
+            "type": "string",
+            "enum": [
+              "worker",
+              "controller"
+            ],
+            "default": "worker"
+          },
+          "study_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "study_name_hint": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": true,
+            "default": {}
+          },
+          "outputs": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "subgraph"
+              ],
+              "properties": {
+                "subgraph": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "field": {
+                  "type": "string",
+                  "enum": [
+                    "value"
+                  ],
+                  "default": "value"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "signals": {
+      "type": "object",
+      "additionalProperties": true,
+      "default": {}
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": true,
+      "default": {}
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "constants": {
+          "type": "object",
+          "additionalProperties": true,
+          "default": {}
+        },
+        "permute": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "kind",
+              "values"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "study_input",
+                  "rule_param",
+                  "symbol"
+                ]
+              },
+              "study": {
+                "type": "string"
+              },
+              "input": {
+                "type": "string"
+              },
+              "requires_study_mode": {
+                "type": "string",
+                "enum": [
+                  "managed",
+                  "bind"
+                ],
+                "default": "managed"
+              },
+              "binding_method_hint": {
+                "type": "string",
+                "enum": [
+                  "native_setter",
+                  "managed_bridge"
+                ],
+                "default": "native_setter"
+              },
+              "target": {
+                "type": "string"
+              },
+              "param_path": {
+                "type": "string"
+              },
+              "values": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": [
+                    "number",
+                    "integer",
+                    "boolean",
+                    "string"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "dag": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "default": null
+    },
+    "chains": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "steps"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "edge_eval": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "default": null
+    },
+    "outcome_model": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "default": null
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dataset"
+      ],
+      "properties": {
+        "dataset": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "format",
+            "path",
+            "fields"
+          ],
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "jsonl"
+              ],
+              "default": "csv"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fields": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "default": {},
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "base_dir": {
+              "type": "string",
+              "default": "artifacts"
+            },
+            "write_run_manifest": {
+              "type": "boolean",
+              "default": true
+            },
+            "write_metrics_summary": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

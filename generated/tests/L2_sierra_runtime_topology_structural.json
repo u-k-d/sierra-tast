@@ -1,0 +1,21 @@
+{
+  "layer_id": "sierra_runtime_topology",
+  "required_check_kinds": [
+    "api_signatures",
+    "file_layout",
+    "module_boundaries",
+    "plan_ast_shape",
+    "diagnostics"
+  ],
+  "group_ids": [
+    "CHKGRP_API_SIGNATURES",
+    "CHKGRP_FILE_LAYOUT",
+    "CHKGRP_MODULE_BOUNDARIES",
+    "CHKGRP_PLAN_AST_SHAPE",
+    "CHKGRP_DIAGNOSTICS"
+  ],
+  "owned_pointers": [
+    "/execution",
+    "/execution/backend"
+  ]
+}

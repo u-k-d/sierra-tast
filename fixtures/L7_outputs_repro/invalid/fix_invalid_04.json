@@ -1,0 +1,71 @@
+{
+  "version": 262,
+  "plan_kind": "sierra_research_engine.plan",
+  "plan_io": {
+    "format": "json",
+    "encoding": "utf-8"
+  },
+  "universe": {
+    "source": "inline",
+    "symbols": [
+      "ES",
+      "NQ"
+    ],
+    "timeframe": "5m",
+    "date_range": {
+      "start": "2025-01-01",
+      "end": "2025-01-31"
+    }
+  },
+  "execution": {
+    "worker_charts": [
+      2
+    ],
+    "backend": {
+      "type": "sierra_chart",
+      "sierra_chart": {}
+    }
+  },
+  "studies": {
+    "ema_fast": {
+      "mode": "managed",
+      "study_id": 1,
+      "outputs": {
+        "value": {
+          "subgraph": 0
+        }
+      }
+    }
+  },
+  "chains": {
+    "main": {
+      "steps": [
+        {
+          "kind": "emit",
+          "from": "@study.ema_fast.value",
+          "as": "ema"
+        }
+      ]
+    }
+  },
+  "outputs": {
+    "dataset": {
+      "format": "csv",
+      "path": "out/data.csv",
+      "fields": [
+        {
+          "id": "ema",
+          "from": "@step.main.ema"
+        }
+      ]
+    }
+  },
+  "meta": {
+    "fixture_id": "L7_outputs_repro_invalid_04",
+    "expected_error": "E_IO_OUTPUT_CONFIG_INVALID",
+    "invalid_pointer": "/outputs"
+  },
+  "compat": {
+    "invalid_case": true
+  }
+}

@@ -1,0 +1,206 @@
+{
+  "lock_version": 1,
+  "description": "Allowed dependency edges between layers (lower layers only) and permitted interfaces.",
+  "layers": [
+    {
+      "layer_id": "core_identity_io",
+      "order": 0
+    },
+    {
+      "layer_id": "universe_data",
+      "order": 1
+    },
+    {
+      "layer_id": "sierra_runtime_topology",
+      "order": 2
+    },
+    {
+      "layer_id": "studies_features",
+      "order": 3
+    },
+    {
+      "layer_id": "rule_chain_dsl",
+      "order": 4
+    },
+    {
+      "layer_id": "experimentation_permute",
+      "order": 5
+    },
+    {
+      "layer_id": "semantics_integrity",
+      "order": 6
+    },
+    {
+      "layer_id": "outputs_repro",
+      "order": 7
+    },
+    {
+      "layer_id": "governance_evolution",
+      "order": 8
+    }
+  ],
+  "interfaces": [
+    {
+      "interface_id": "plan_access",
+      "version": 1,
+      "summary": "Read-only CNF plan access via ScopedPlanView"
+    },
+    {
+      "interface_id": "diagnostics",
+      "version": 1,
+      "summary": "Emit structured diagnostics with ownership enforcement"
+    },
+    {
+      "interface_id": "hashing",
+      "version": 1,
+      "summary": "Stable hashing utilities for CNF/DAG/artifacts"
+    },
+    {
+      "interface_id": "sierra_chart_access",
+      "version": 1,
+      "summary": "Sierra Chart adapter surface: chart/study/subgraph access + readiness polling"
+    },
+    {
+      "interface_id": "artifact_io",
+      "version": 1,
+      "summary": "Artifact and dataset output IO (filesystem gated by permissions)"
+    }
+  ],
+  "rules": {
+    "default_policy": "deny",
+    "allow_lower_layers_only": true,
+    "enforce_interface_only_for_cross_cutting": true
+  },
+  "allowed_deps": [
+    {
+      "from": "core_identity_io",
+      "to_layers": [],
+      "to_interfaces": [
+        "plan_access",
+        "diagnostics",
+        "hashing"
+      ]
+    },
+    {
+      "from": "universe_data",
+      "to_layers": [
+        "core_identity_io"
+      ],
+      "to_interfaces": [
+        "plan_access",
+        "diagnostics",
+        "hashing"
+      ]
+    },
+    {
+      "from": "sierra_runtime_topology",
+      "to_layers": [
+        "core_identity_io",
+        "universe_data"
+      ],
+      "to_interfaces": [
+        "plan_access",
+        "diagnostics",
+        "hashing",
+        "sierra_chart_access"
+      ]
+    },
+    {
+      "from": "studies_features",
+      "to_layers": [
+        "core_identity_io",
+        "universe_data",
+        "sierra_runtime_topology"
+      ],
+      "to_interfaces": [
+        "plan_access",
+        "diagnostics",
+        "hashing",
+        "sierra_chart_access"
+      ]
+    },
+    {
+      "from": "rule_chain_dsl",
+      "to_layers": [
+        "core_identity_io",
+        "universe_data",
+        "studies_features"
+      ],
+      "to_interfaces": [
+        "plan_access",
+        "diagnostics",
+        "hashing"
+      ]
+    },
+    {
+      "from": "experimentation_permute",
+      "to_layers": [
+        "core_identity_io",
+        "universe_data",
+        "studies_features",
+        "rule_chain_dsl"
+      ],
+      "to_interfaces": [
+        "plan_access",
+        "diagnostics",
+        "hashing"
+      ]
+    },
+    {
+      "from": "semantics_integrity",
+      "to_layers": [
+        "core_identity_io",
+        "universe_data",
+        "sierra_runtime_topology",
+        "studies_features",
+        "rule_chain_dsl",
+        "experimentation_permute"
+      ],
+      "to_interfaces": [
+        "plan_access",
+        "diagnostics",
+        "hashing"
+      ]
+    },
+    {
+      "from": "outputs_repro",
+      "to_layers": [
+        "core_identity_io",
+        "universe_data",
+        "sierra_runtime_topology",
+        "studies_features",
+        "rule_chain_dsl",
+        "experimentation_permute",
+        "semantics_integrity"
+      ],
+      "to_interfaces": [
+        "plan_access",
+        "diagnostics",
+        "hashing",
+        "artifact_io"
+      ]
+    },
+    {
+      "from": "governance_evolution",
+      "to_layers": [
+        "core_identity_io"
+      ],
+      "to_interfaces": [
+        "diagnostics",
+        "hashing"
+      ]
+    }
+  ],
+  "enforcement": {
+    "ci_checks": [
+      "dep_graph_valid: each from->to is allowed and only to lower-order layers",
+      "include_boundary: forbid includes from higher layer directories; allow only interfaces",
+      "link_boundary: build targets cannot link forbidden layer targets",
+      "contract_dep_match: contract dependencies must be subset of layers.lock allowances"
+    ],
+    "runtime_guards": [
+      "ScopedPlanView denies out-of-scope JSON pointers",
+      "DiagnosticOwnershipGuard enforces error code ownership by layer_id"
+    ]
+  }
+}

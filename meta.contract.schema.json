@@ -1,0 +1,874 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/sierra-research-engine/contracts/meta.contract.schema.json",
+  "title": "Normative Contract Block Meta-Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_block_version",
+    "layer_id",
+    "layer_version",
+    "contract_semantics_version",
+    "schema_scope",
+    "dependencies",
+    "ast_nodes",
+    "canonicalization_rules",
+    "public_api",
+    "normative_ast_checks",
+    "compile_outputs",
+    "fixtures",
+    "capabilities"
+  ],
+  "properties": {
+    "contract_block_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of this contract-block format."
+    },
+    "contract_semantics_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Version of the enforcement semantics used to interpret checks."
+    },
+    "layer_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "layer_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "schema_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owned_pointers",
+        "owned_defs",
+        "notes"
+      ],
+      "properties": {
+        "owned_pointers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^/.*"
+          },
+          "description": "JSON Pointers in the plan schema owned by this layer."
+        },
+        "owned_defs": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "description": "Names of $defs this layer owns (if applicable)."
+        },
+        "notes": {
+          "type": "string",
+          "default": ""
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed_layer_ids",
+        "allowed_interfaces"
+      ],
+      "properties": {
+        "allowed_layer_ids": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "description": "Layer IDs this layer may depend on (typically lower layers only)."
+        },
+        "allowed_interfaces": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/InterfaceDep"
+          },
+          "description": "Named interfaces this layer may depend on instead of reaching into higher layers."
+        }
+      }
+    },
+    "ast_nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/AstNodeSpec"
+      },
+      "description": "AST nodes owned/defined by this layer."
+    },
+    "canonicalization_rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cnf_version",
+        "defaults_policy",
+        "ordering_policy",
+        "ref_resolution_policy"
+      ],
+      "properties": {
+        "cnf_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "defaults_policy": {
+          "type": "string",
+          "enum": [
+            "apply_schema_defaults_then_contract_defaults",
+            "contract_only",
+            "schema_only"
+          ]
+        },
+        "ordering_policy": {
+          "type": "string",
+          "enum": [
+            "stable_lexicographic",
+            "stable_topological",
+            "preserve_input"
+          ],
+          "default": "stable_lexicographic"
+        },
+        "ref_resolution_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "must_resolve",
+            "on_unresolved"
+          ],
+          "properties": {
+            "must_resolve": {
+              "type": "boolean",
+              "default": true
+            },
+            "on_unresolved": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warn",
+                "keep_ref"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "public_api": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "functions",
+        "types",
+        "error_codes"
+      ],
+      "properties": {
+        "functions": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FunctionSpec"
+          }
+        },
+        "types": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TypeSpec"
+          }
+        },
+        "error_codes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ErrorCodeSpec"
+          }
+        }
+      }
+    },
+    "normative_ast_checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cnf_basis",
+        "check_groups"
+      ],
+      "properties": {
+        "cnf_basis": {
+          "type": "string",
+          "enum": [
+            "cnf_only",
+            "raw_then_cnf"
+          ],
+          "default": "cnf_only",
+          "description": "All AST checks must be evaluated against CNF by default."
+        },
+        "check_groups": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/CheckGroup"
+          }
+        }
+      }
+    },
+    "compile_outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "emits",
+        "artifacts"
+      ],
+      "properties": {
+        "emits": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string",
+            "enum": [
+              "execution_dag",
+              "lineage_dag",
+              "diagnostics",
+              "manifest",
+              "dataset_schema"
+            ]
+          }
+        },
+        "artifacts": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ArtifactSpec"
+          }
+        }
+      }
+    },
+    "fixtures": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "valid",
+        "invalid",
+        "minimums"
+      ],
+      "properties": {
+        "valid": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FixtureSpec"
+          }
+        },
+        "invalid": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/InvalidFixtureSpec"
+          }
+        },
+        "minimums": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "valid",
+            "invalid"
+          ],
+          "properties": {
+            "valid": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 10
+            },
+            "invalid": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 10
+            }
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "introduces",
+        "requires",
+        "optional",
+        "deprecates"
+      ],
+      "properties": {
+        "introduces": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CapabilitySpec"
+          }
+        },
+        "requires": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "optional": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "deprecates": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DeprecationSpec"
+          }
+        }
+      }
+    },
+    "hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "doc_sha256",
+        "contract_sha256"
+      ],
+      "properties": {
+        "doc_sha256": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "contract_sha256": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "InterfaceDep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interface_id",
+        "version"
+      ],
+      "properties": {
+        "interface_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "AstNodeSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "kind",
+        "fields",
+        "invariants"
+      ],
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "struct",
+            "tagged_union",
+            "enum"
+          ]
+        },
+        "fields": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FieldSpec"
+          }
+        },
+        "tags": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          }
+        },
+        "invariants": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/InvariantSpec"
+          }
+        }
+      }
+    },
+    "FieldSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type",
+        "required"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "type": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "default": {}
+      }
+    },
+    "InvariantSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "severity",
+        "rule"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^INV_[A-Z0-9_]{3,64}$"
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn"
+          ]
+        },
+        "rule": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "json_pointer_present",
+                "json_pointer_absent",
+                "tag_matches",
+                "field_type_matches",
+                "no_cross_layer_pointer_access",
+                "dependency_before_use",
+                "monotonic_counter_required"
+              ]
+            },
+            "params": {
+              "type": "object",
+              "additionalProperties": true,
+              "default": {}
+            }
+          }
+        }
+      }
+    },
+    "FunctionSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "signature",
+        "stability"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^FN_[A-Z0-9_]{3,64}$"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "signature": {
+          "$ref": "#/$defs/CppSignature"
+        },
+        "stability": {
+          "type": "string",
+          "enum": [
+            "stable",
+            "evolvable",
+            "experimental"
+          ]
+        }
+      }
+    },
+    "CppSignature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "return_type",
+        "params",
+        "noexcept",
+        "namespace"
+      ],
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "default": ""
+        },
+        "return_type": {
+          "type": "string"
+        },
+        "params": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ParamSpec"
+          }
+        },
+        "noexcept": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "ParamSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "TypeSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^TY_[A-Z0-9_]{3,64}$"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "struct",
+            "enum",
+            "alias",
+            "tagged_union"
+          ]
+        }
+      }
+    },
+    "ErrorCodeSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "layer_id",
+        "severity",
+        "message_template"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^(E_SCHEMA|E_CANON|E_SEM|E_COMP|E_RUN|E_IO|E_LAYER)_[A-Z0-9_]{3,64}$"
+        },
+        "layer_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn"
+          ]
+        },
+        "message_template": {
+          "type": "string"
+        }
+      }
+    },
+    "CheckGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "group_id",
+        "kind",
+        "checks"
+      ],
+      "properties": {
+        "group_id": {
+          "type": "string",
+          "pattern": "^CHKGRP_[A-Z0-9_]{3,64}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "api_signatures",
+            "file_layout",
+            "module_boundaries",
+            "plan_ast_shape",
+            "diagnostics"
+          ]
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/CheckSpec"
+          }
+        }
+      }
+    },
+    "CheckSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "severity",
+        "assert"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^CHK_[A-Z0-9_]{3,64}$"
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn"
+          ]
+        },
+        "assert": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "function_exists_with_signature",
+                "file_exists",
+                "file_forbidden",
+                "path_matches_glob",
+                "no_forbidden_includes",
+                "only_allowed_layer_deps",
+                "cnf_has_node",
+                "cnf_pointer_in_scope",
+                "invalid_fixture_yields_error"
+              ]
+            },
+            "params": {
+              "type": "object",
+              "additionalProperties": true,
+              "default": {}
+            }
+          }
+        }
+      }
+    },
+    "ArtifactSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^ART_[A-Z0-9_]{3,64}$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "header",
+            "manifest",
+            "tests",
+            "schema",
+            "doc",
+            "binary",
+            "dataset"
+          ]
+        }
+      }
+    },
+    "FixtureSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^FIX_[A-Z0-9_]{3,64}$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expect": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cnf_hash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "execution_dag_hash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "lineage_dag_hash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          },
+          "default": {}
+        }
+      }
+    },
+    "InvalidFixtureSpec": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/FixtureSpec"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "expect_errors"
+          ],
+          "properties": {
+            "expect_errors": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/ExpectedError"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ExpectedError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "blame_pointers"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "blame_pointers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^/.*"
+          }
+        },
+        "dag_node_ids": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "CapabilitySpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "summary"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^cap:[a-z0-9_]+(:[a-z0-9_]+)*$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "summary": {
+          "type": "string"
+        }
+      }
+    },
+    "DeprecationSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "since_layer_version",
+        "removal_layer_version"
+      ],
+      "properties": {
+        "target": {
+          "type": "string"
+        },
+        "since_layer_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "removal_layer_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "layer_id": "sierra_runtime_topology",
+  "expected_invalid_diagnostics": [
+    {
+      "fixture_id": "FIX_INVALID_01",
+      "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
+      "blame_pointers": [
+        "/execution"
+      ]
+    },
+    {
+      "fixture_id": "FIX_INVALID_02",
+      "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
+      "blame_pointers": [
+        "/execution"
+      ]
+    },
+    {
+      "fixture_id": "FIX_INVALID_03",
+      "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
+      "blame_pointers": [
+        "/execution"
+      ]
+    },
+    {
+      "fixture_id": "FIX_INVALID_04",
+      "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
+      "blame_pointers": [
+        "/execution"
+      ]
+    },
+    {
+      "fixture_id": "FIX_INVALID_05",
+      "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
+      "blame_pointers": [
+        "/execution"
+      ]
+    },
+    {
+      "fixture_id": "FIX_INVALID_06",
+      "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
+      "blame_pointers": [
+        "/execution"
+      ]
+    },
+    {
+      "fixture_id": "FIX_INVALID_07",
+      "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
+      "blame_pointers": [
+        "/execution"
+      ]
+    },
+    {
+      "fixture_id": "FIX_INVALID_08",
+      "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
+      "blame_pointers": [
+        "/execution"
+      ]
+    },
+    {
+      "fixture_id": "FIX_INVALID_09",
+      "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
+      "blame_pointers": [
+        "/execution"
+      ]
+    },
+    {
+      "fixture_id": "FIX_INVALID_10",
+      "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
+      "blame_pointers": [
+        "/execution"
+      ]
+    }
+  ]
+}
