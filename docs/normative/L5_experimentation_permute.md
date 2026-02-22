@@ -15,7 +15,9 @@ This normative document defines the machine-checkable contract for `experimentat
   "schema_scope": {
     "owned_pointers": [
       "/parameters",
-      "/parameters/permute"
+      "/parameters/permute",
+      "/validation",
+      "/studies"
     ],
     "owned_defs": [],
     "notes": "Experiment permutation declarations and policy."
@@ -68,7 +70,9 @@ This normative document defines the machine-checkable contract for `experimentat
             "params": {
               "owned_pointers": [
                 "/parameters",
-                "/parameters/permute"
+                "/parameters/permute",
+                "/validation",
+                "/studies"
               ]
             }
           }
@@ -247,7 +251,9 @@ This normative document defines the machine-checkable contract for `experimentat
               "params": {
                 "pointers": [
                   "/parameters",
-                  "/parameters/permute"
+                  "/parameters/permute",
+                  "/validation",
+                  "/studies"
                 ]
               }
             }
@@ -650,8 +656,8 @@ This normative document defines the machine-checkable contract for `experimentat
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:3a6551a5eb5bb34ef660d2d1b63d0c0ff2b8af59c347caa317264bf7a7c2970f",
-    "contract_sha256": "sha256:3a6551a5eb5bb34ef660d2d1b63d0c0ff2b8af59c347caa317264bf7a7c2970f"
+    "doc_sha256": "sha256:423e284a5ee105e658279ebf8b00bbe1395b2346c23e136544df5c45a76faae8",
+    "contract_sha256": "sha256:423e284a5ee105e658279ebf8b00bbe1395b2346c23e136544df5c45a76faae8"
   }
 }
 ```

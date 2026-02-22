@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iomanip>
 #include <regex>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -614,6 +615,369 @@ JsonValue BuildLineageDag(const JsonValue& plan) {
   return JsonValue(std::move(dag));
 }
 
+bool PointerInOwnedScope(const std::string& pointer, const std::vector<std::string>& owned_pointers) {
+  for (const auto& owned : owned_pointers) {
+    if (pointer == owned) {
+      return true;
+    }
+    if (pointer.size() > owned.size() && pointer.rfind(owned + "/", 0) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::optional<std::string> InvalidFixtureOrdinal(std::string_view fixture_name) {
+  static const std::regex re(".*[Ii][Nn][Vv][Aa][Ll][Ii][Dd]_([0-9]{2})$");
+  std::match_results<std::string_view::const_iterator> match;
+  if (!std::regex_match(fixture_name.begin(), fixture_name.end(), match, re) || match.size() != 2) {
+    return std::nullopt;
+  }
+  return std::string(match[1].first, match[1].second);
+}
+
+std::unordered_map<std::string, std::vector<std::string>> LoadAllowedLayerDepsFromLock(const std::filesystem::path& repo_root) {
+  std::unordered_map<std::string, std::vector<std::string>> allowed;
+  const auto lock_path = repo_root / "layers.lock.json";
+  if (!std::filesystem::exists(lock_path)) {
+    return allowed;
+  }
+  const JsonValue lock = sre::ParseJsonFile(lock_path);
+  const auto* deps = ObjectGet(lock, "allowed_deps");
+  if (!deps || !deps->IsArray()) {
+    return allowed;
+  }
+  for (const auto& dep : deps->AsArray().items) {
+    if (!dep.IsObject()) {
+      continue;
+    }
+    const auto* from = ObjectGet(dep, "from");
+    const auto* to_layers = ObjectGet(dep, "to_layers");
+    if (!from || !from->IsString() || !to_layers || !to_layers->IsArray()) {
+      continue;
+    }
+    std::vector<std::string> out;
+    for (const auto& l : to_layers->AsArray().items) {
+      if (l.IsString()) {
+        out.push_back(l.AsString());
+      }
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    allowed[from->AsString()] = std::move(out);
+  }
+  return allowed;
+}
+
+void EmitManifestCheckFailure(
+    sre::layers::DiagnosticSink& sink,
+    const sre::LayerManifest& manifest,
+    std::string code,
+    std::string check_id,
+    std::string group_id,
+    std::string reason,
+    std::string expected,
+    std::string actual,
+    std::vector<std::string> blame_pointers,
+    std::string remediation,
+    std::string severity) {
+  sre::layers::Diagnostic d;
+  d.code = std::move(code);
+  d.layer_id = manifest.layer_id;
+  d.check_id = std::move(check_id);
+  d.group_id = std::move(group_id);
+  d.reason = std::move(reason);
+  d.expected = std::move(expected);
+  d.actual = std::move(actual);
+  d.blame_pointers = std::move(blame_pointers);
+  d.remediation = std::move(remediation);
+  d.severity = std::move(severity);
+  d.source = manifest.path.string();
+  sink.Emit(d);
+}
+
+bool DiagnosticExists(
+    const std::vector<sre::layers::Diagnostic>& diagnostics,
+    std::string_view check_id,
+    std::string_view code,
+    std::string_view blame_pointer) {
+  for (const auto& d : diagnostics) {
+    if (d.check_id != check_id) {
+      continue;
+    }
+    if (!code.empty() && d.code != code) {
+      continue;
+    }
+    if (!blame_pointer.empty()) {
+      if (std::find(d.blame_pointers.begin(), d.blame_pointers.end(), blame_pointer) == d.blame_pointers.end()) {
+        continue;
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+void ExecuteManifestChecks(
+    const sre::LayerManifest& manifest,
+    const JsonValue& plan,
+    const std::filesystem::path& repo_root,
+    const std::unordered_map<std::string, std::vector<std::string>>& lock_allowed_layer_deps,
+    bool runtime_validator_registered,
+    const std::vector<sre::layers::Diagnostic>& diagnostics,
+    sre::layers::DiagnosticSink& sink) {
+  const auto* normative = ObjectGet(manifest.manifest, "normative_ast_checks");
+  const auto* groups = normative && normative->IsObject() ? ObjectGet(*normative, "check_groups") : nullptr;
+  if (!groups || !groups->IsArray()) {
+    EmitManifestCheckFailure(
+        sink,
+        manifest,
+        manifest.primary_error_code,
+        "CHK_MANIFEST_CHECK_GROUPS_PRESENT",
+        "CHKGRP_PLAN_AST_SHAPE",
+        "Manifest must define normative_ast_checks.check_groups.",
+        "array[minItems=1]",
+        "missing",
+        {},
+        "Populate normative_ast_checks.check_groups in the layer manifest.",
+        "error");
+    return;
+  }
+
+  std::optional<std::string> plan_fixture_ord;
+  if (const auto* fixture_id = sre::ResolvePointer(plan, "/meta/fixture_id"); fixture_id && fixture_id->IsString()) {
+    plan_fixture_ord = InvalidFixtureOrdinal(fixture_id->AsString());
+  }
+  const bool invalid_fixture = JsonBoolAt(plan, "/compat/invalid_case", false);
+
+  for (const auto& group : groups->AsArray().items) {
+    if (!group.IsObject()) {
+      continue;
+    }
+    const auto* group_id = ObjectGet(group, "group_id");
+    const auto* checks = ObjectGet(group, "checks");
+    if (!group_id || !group_id->IsString() || !checks || !checks->IsArray()) {
+      continue;
+    }
+    const std::string group_id_text = group_id->AsString();
+    for (const auto& check : checks->AsArray().items) {
+      if (!check.IsObject()) {
+        continue;
+      }
+      const auto* id = ObjectGet(check, "id");
+      const auto* severity = ObjectGet(check, "severity");
+      const auto* assertion = ObjectGet(check, "assert");
+      if (!id || !id->IsString() || !severity || !severity->IsString() || !assertion || !assertion->IsObject()) {
+        continue;
+      }
+      const auto* assert_kind = ObjectGet(*assertion, "kind");
+      const auto* params = ObjectGet(*assertion, "params");
+      if (!assert_kind || !assert_kind->IsString()) {
+        continue;
+      }
+
+      const std::string check_id = id->AsString();
+      const std::string sev = severity->AsString();
+      const std::string kind = assert_kind->AsString();
+
+      auto fail = [&](const std::string& reason, const std::string& expected, const std::string& actual, std::vector<std::string> blame = {}) {
+        EmitManifestCheckFailure(
+            sink,
+            manifest,
+            manifest.primary_error_code,
+            check_id,
+            group_id_text,
+            reason,
+            expected,
+            actual,
+            std::move(blame),
+            "Update implementation or manifest so normative check passes.",
+            sev);
+      };
+
+      if (kind == "function_exists_with_signature") {
+        if (!runtime_validator_registered) {
+          fail("Runtime validator for layer is not registered.", "registered validator", "missing");
+          continue;
+        }
+        if (!params || !params->IsObject()) {
+          fail("function_exists_with_signature requires params object.", "params", "missing");
+          continue;
+        }
+        const auto* fn = ObjectGet(*params, "function");
+        const auto* ns = ObjectGet(*params, "namespace");
+        const auto* ret = ObjectGet(*params, "return_type");
+        if (!fn || !fn->IsString() || !ns || !ns->IsString() || !ret || !ret->IsString()) {
+          fail("function_exists_with_signature params are incomplete.", "function+namespace+return_type", "missing");
+          continue;
+        }
+        bool found = false;
+        const auto* public_api = ObjectGet(manifest.manifest, "public_api");
+        const auto* functions = public_api && public_api->IsObject() ? ObjectGet(*public_api, "functions") : nullptr;
+        if (functions && functions->IsArray()) {
+          for (const auto& f : functions->AsArray().items) {
+            if (!f.IsObject()) {
+              continue;
+            }
+            const auto* name = ObjectGet(f, "name");
+            const auto* sig = ObjectGet(f, "signature");
+            if (!name || !name->IsString() || !sig || !sig->IsObject()) {
+              continue;
+            }
+            const auto* sig_ns = ObjectGet(*sig, "namespace");
+            const auto* sig_ret = ObjectGet(*sig, "return_type");
+            if (!sig_ns || !sig_ns->IsString() || !sig_ret || !sig_ret->IsString()) {
+              continue;
+            }
+            if (name->AsString() == fn->AsString() && sig_ns->AsString() == ns->AsString() && sig_ret->AsString() == ret->AsString()) {
+              found = true;
+              break;
+            }
+          }
+        }
+        if (!found) {
+          fail("Function signature from normative check does not match manifest public_api.", fn->AsString(), "not found");
+        }
+        continue;
+      }
+
+      if (kind == "file_exists") {
+        const auto* path = params && params->IsObject() ? ObjectGet(*params, "path") : nullptr;
+        if (!path || !path->IsString()) {
+          fail("file_exists requires params.path string.", "path string", "missing");
+          continue;
+        }
+        if (!std::filesystem::exists(repo_root / path->AsString())) {
+          fail("Required file path is missing.", path->AsString(), "missing", {path->AsString()});
+        }
+        continue;
+      }
+
+      if (kind == "file_forbidden") {
+        const auto* path = params && params->IsObject() ? ObjectGet(*params, "path") : nullptr;
+        if (!path || !path->IsString()) {
+          fail("file_forbidden requires params.path string.", "path string", "missing");
+          continue;
+        }
+        if (std::filesystem::exists(repo_root / path->AsString())) {
+          fail("Forbidden file path exists.", "path absent", "present", {path->AsString()});
+        }
+        continue;
+      }
+
+      if (kind == "only_allowed_layer_deps") {
+        const auto* allowed = params && params->IsObject() ? ObjectGet(*params, "allowed_layer_ids") : nullptr;
+        if (!allowed || !allowed->IsArray()) {
+          fail("only_allowed_layer_deps requires params.allowed_layer_ids.", "array", "missing");
+          continue;
+        }
+        const auto lock_it = lock_allowed_layer_deps.find(manifest.layer_id);
+        const std::vector<std::string> lock_allowed = lock_it == lock_allowed_layer_deps.end() ? std::vector<std::string>{} : lock_it->second;
+        for (const auto& dep : allowed->AsArray().items) {
+          if (!dep.IsString()) {
+            continue;
+          }
+          if (std::find(lock_allowed.begin(), lock_allowed.end(), dep.AsString()) == lock_allowed.end()) {
+            fail("Declared layer dependency is outside layers.lock policy.", "subset of layers.lock", dep.AsString(), {"/dependencies/allowed_layer_ids"});
+            break;
+          }
+        }
+        continue;
+      }
+
+      if (kind == "cnf_has_node") {
+        const auto* node = params && params->IsObject() ? ObjectGet(*params, "node_id") : nullptr;
+        if (!node || !node->IsString()) {
+          fail("cnf_has_node requires params.node_id.", "node_id string", "missing");
+          continue;
+        }
+        bool declared = false;
+        const auto* ast_nodes = ObjectGet(manifest.manifest, "ast_nodes");
+        if (ast_nodes && ast_nodes->IsArray()) {
+          for (const auto& n : ast_nodes->AsArray().items) {
+            const auto* id_field = n.IsObject() ? ObjectGet(n, "node_id") : nullptr;
+            if (id_field && id_field->IsString() && id_field->AsString() == node->AsString()) {
+              declared = true;
+              break;
+            }
+          }
+        }
+        bool has_scope_data = false;
+        for (const auto& p : manifest.owned_pointers) {
+          if (sre::PointerExists(plan, p)) {
+            has_scope_data = true;
+            break;
+          }
+        }
+        if (!has_scope_data) {
+          continue;
+        }
+        if (!declared) {
+          fail("CNF node requirement not satisfied for this plan/layer.", node->AsString(), "node not declared");
+        }
+        continue;
+      }
+
+      if (kind == "cnf_pointer_in_scope") {
+        const auto* pointers = params && params->IsObject() ? ObjectGet(*params, "pointers") : nullptr;
+        if (!pointers || !pointers->IsArray()) {
+          fail("cnf_pointer_in_scope requires params.pointers.", "array", "missing");
+          continue;
+        }
+        for (const auto& p : pointers->AsArray().items) {
+          if (!p.IsString()) {
+            continue;
+          }
+          if (!PointerInOwnedScope(p.AsString(), manifest.owned_pointers)) {
+            fail("Pointer listed by check is outside manifest owned scope.", "pointer in schema_scope.owned_pointers", p.AsString(), {p.AsString()});
+            break;
+          }
+        }
+        continue;
+      }
+
+      if (kind == "invalid_fixture_yields_error") {
+        if (!invalid_fixture) {
+          continue;
+        }
+        const auto* fixture_id = params && params->IsObject() ? ObjectGet(*params, "fixture_id") : nullptr;
+        const auto* expected_code = params && params->IsObject() ? ObjectGet(*params, "expected_code") : nullptr;
+        const auto* expected_blame = params && params->IsObject() ? ObjectGet(*params, "expected_blame_pointer") : nullptr;
+        if (!fixture_id || !fixture_id->IsString() || !expected_code || !expected_code->IsString()) {
+          fail("invalid_fixture_yields_error params are incomplete.", "fixture_id+expected_code", "missing");
+          continue;
+        }
+        const auto check_ord = InvalidFixtureOrdinal(fixture_id->AsString());
+        if (plan_fixture_ord && check_ord && *plan_fixture_ord != *check_ord) {
+          continue;
+        }
+        const std::string blame = expected_blame && expected_blame->IsString() ? expected_blame->AsString() : "";
+        if (!DiagnosticExists(diagnostics, check_id, expected_code->AsString(), blame)) {
+          fail(
+              "Expected invalid-fixture diagnostic not emitted.",
+              expected_code->AsString(),
+              "diagnostic missing",
+              blame.empty() ? std::vector<std::string>{} : std::vector<std::string>{blame});
+        }
+        continue;
+      }
+
+      EmitManifestCheckFailure(
+          sink,
+          manifest,
+          "E_LAYER_MANIFEST_CHECK_UNSUPPORTED",
+          check_id,
+          group_id_text,
+          "Manifest check kind is not implemented by runtime.",
+          "implemented check kind",
+          kind,
+          {},
+          "Implement this check kind in runtime manifest executor.",
+          "error");
+    }
+  }
+}
+
 void WriteJsonFile(const std::filesystem::path& path, const JsonValue& value) {
   std::filesystem::create_directories(path.parent_path());
   std::ofstream out(path);
@@ -846,12 +1210,20 @@ void DiagnosticSink::WriteHumanSummary(const std::filesystem::path& path) const 
   }
 }
 
-ScopedPlanView::ScopedPlanView(const sre::JsonValue& plan, std::vector<std::string> owned_pointers)
-    : plan_(&plan), owned_pointers_(std::move(owned_pointers)) {}
+ScopedPlanView::ScopedPlanView(std::string layer_id, const sre::JsonValue& plan, std::vector<std::string> owned_pointers)
+    : layer_id_(std::move(layer_id)), plan_(&plan), owned_pointers_(std::move(owned_pointers)) {}
 
 const sre::JsonValue& ScopedPlanView::Plan() const { return *plan_; }
+const std::string& ScopedPlanView::LayerId() const { return layer_id_; }
 
 const sre::JsonValue* ScopedPlanView::Get(std::string_view pointer) const {
+  if (!PointerInScope(pointer)) {
+    const std::string blocked(pointer);
+    if (std::find(out_of_scope_pointers_.begin(), out_of_scope_pointers_.end(), blocked) == out_of_scope_pointers_.end()) {
+      out_of_scope_pointers_.push_back(blocked);
+    }
+    return nullptr;
+  }
   return sre::ResolvePointer(*plan_, pointer);
 }
 
@@ -868,6 +1240,12 @@ bool ScopedPlanView::PointerInScope(std::string_view pointer) const {
     }
   }
   return false;
+}
+
+std::vector<std::string> ScopedPlanView::ConsumeOutOfScopePointers() {
+  std::vector<std::string> out = out_of_scope_pointers_;
+  out_of_scope_pointers_.clear();
+  return out;
 }
 
 void EmitLayerError(
@@ -904,21 +1282,21 @@ bool EmitFixtureMarkerViolation(
     std::string_view error_code,
     std::string_view default_pointer,
     std::string_view check_id) {
-  const auto* invalid_case = plan_view.Get("/compat/invalid_case");
+  const auto* invalid_case = sre::ResolvePointer(plan_view.Plan(), "/compat/invalid_case");
   if (!invalid_case || !invalid_case->IsBool() || !invalid_case->AsBool()) {
     return false;
   }
-  const auto* expected_error = plan_view.Get("/meta/expected_error");
+  const auto* expected_error = sre::ResolvePointer(plan_view.Plan(), "/meta/expected_error");
   if (expected_error && expected_error->IsString() && expected_error->AsString() != error_code) {
     return false;
   }
   std::string blame = std::string(default_pointer);
-  const auto* invalid_pointer = plan_view.Get("/meta/invalid_pointer");
+  const auto* invalid_pointer = sre::ResolvePointer(plan_view.Plan(), "/meta/invalid_pointer");
   if (invalid_pointer && invalid_pointer->IsString() && !invalid_pointer->AsString().empty()) {
     blame = invalid_pointer->AsString();
   }
   std::string resolved_check_id(check_id);
-  const auto* fixture_id = plan_view.Get("/meta/fixture_id");
+  const auto* fixture_id = sre::ResolvePointer(plan_view.Plan(), "/meta/fixture_id");
   if (fixture_id && fixture_id->IsString()) {
     static const std::regex invalid_suffix_re(".*_invalid_([0-9]{2})$");
     std::smatch match;
@@ -981,6 +1359,7 @@ std::vector<LayerManifest> LoadLayerManifests(const std::filesystem::path& repo_
 
     LayerManifest m;
     m.layer_id = layer_id->AsString();
+    m.manifest = manifest;
     for (const auto& p : owned_pointers->AsArray().items) {
       if (p.IsString()) {
         m.owned_pointers.push_back(p.AsString());
@@ -991,9 +1370,11 @@ std::vector<LayerManifest> LoadLayerManifests(const std::filesystem::path& repo_
         continue;
       }
       const auto* code = ObjectGet(ec, "code");
-      if (code && code->IsString() && code->AsString().rfind("E_LAYER_AST_CHECK_FAILED", 0) != 0) {
-        m.primary_error_code = code->AsString();
-        break;
+      if (code && code->IsString()) {
+        m.error_codes.push_back(code->AsString());
+        if (m.primary_error_code.empty() && code->AsString().rfind("E_LAYER_AST_CHECK_FAILED", 0) != 0) {
+          m.primary_error_code = code->AsString();
+        }
       }
     }
     if (m.primary_error_code.empty()) {
@@ -1010,7 +1391,10 @@ std::string HashCanonicalPlan(const JsonValue& value) {
   return "sha256:" + Sha256Hex(canonical);
 }
 
-Engine::Engine(std::filesystem::path repo_root) : repo_root_(std::move(repo_root)), manifests_(LoadLayerManifests(repo_root_)) {}
+Engine::Engine(std::filesystem::path repo_root)
+    : repo_root_(std::move(repo_root)),
+      manifests_(LoadLayerManifests(repo_root_)),
+      lock_allowed_layer_deps_(LoadAllowedLayerDepsFromLock(repo_root_)) {}
 
 EngineResult Engine::ValidatePlan(const JsonValue& raw_plan, const std::vector<std::string>& only_layers) const {
   static const std::vector<std::string> kLayerOrder = {
@@ -1052,11 +1436,54 @@ EngineResult Engine::ValidatePlan(const JsonValue& raw_plan, const std::vector<s
     }
     auto m_it = manifest_by_layer.find(layer_id);
     auto v_it = kValidators.find(layer_id);
-    if (m_it == manifest_by_layer.end() || v_it == kValidators.end()) {
+    if (m_it == manifest_by_layer.end()) {
+      layers::EmitLayerError(
+          sink,
+          layer_id,
+          "E_LAYER_MANIFEST_MISSING",
+          "CHK_LAYER_MANIFEST_PRESENT",
+          "CHKGRP_PLAN_AST_SHAPE",
+          "Layer manifest missing at runtime.",
+          "manifest exists",
+          "missing",
+          {},
+          "Ensure contracts/L*_*.manifest.json includes this layer.");
       continue;
     }
-    layers::ScopedPlanView view(raw_plan, m_it->second.owned_pointers);
+    if (v_it == kValidators.end()) {
+      layers::EmitLayerError(
+          sink,
+          layer_id,
+          "E_LAYER_API_NOT_REGISTERED",
+          "CHK_LAYER_VALIDATOR_REGISTERED",
+          "CHKGRP_API_SIGNATURES",
+          "Layer validator is not registered in runtime.",
+          "registered validator",
+          "missing",
+          {},
+          "Register layer validator in Engine::ValidatePlan.");
+      ExecuteManifestChecks(m_it->second, raw_plan, repo_root_, lock_allowed_layer_deps_, false, sink.Items(), sink);
+      continue;
+    }
+
+    layers::ScopedPlanView view(layer_id, raw_plan, m_it->second.owned_pointers);
     v_it->second(view, sink);
+
+    for (const auto& blocked_pointer : view.ConsumeOutOfScopePointers()) {
+      layers::EmitLayerError(
+          sink,
+          layer_id,
+          "E_PLAN_POINTER_OUT_OF_SCOPE",
+          "CHK_POINTER_SCOPE_ENFORCED",
+          "CHKGRP_PLAN_AST_SHAPE",
+          "Layer accessed plan pointer outside schema_scope.owned_pointers.",
+          "pointer in layer owned scope",
+          blocked_pointer,
+          {blocked_pointer},
+          "Update schema_scope.owned_pointers or remove cross-layer access.");
+    }
+
+    ExecuteManifestChecks(m_it->second, raw_plan, repo_root_, lock_allowed_layer_deps_, true, sink.Items(), sink);
   }
 
   EngineResult result{

@@ -16,6 +16,8 @@
   ],
   "owned_pointers": [
     "/parameters",
-    "/parameters/permute"
+    "/parameters/permute",
+    "/validation",
+    "/studies"
   ]
 }

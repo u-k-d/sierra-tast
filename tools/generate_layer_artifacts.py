@@ -9,10 +9,10 @@ LAYER_ORDER = [
     (1, "universe_data", ["/universe"]),
     (2, "sierra_runtime_topology", ["/execution", "/execution/backend"]),
     (3, "studies_features", ["/studies"]),
-    (4, "rule_chain_dsl", ["/chains", "/signals", "/gates"]),
-    (5, "experimentation_permute", ["/parameters", "/parameters/permute"]),
-    (6, "semantics_integrity", ["/validation", "/execution", "/studies", "/chains", "/parameters"]),
-    (7, "outputs_repro", ["/outputs"]),
+    (4, "rule_chain_dsl", ["/chains", "/signals", "/gates", "/validation", "/execution/backend/sierra_chart/layout_contract/readiness"]),
+    (5, "experimentation_permute", ["/parameters", "/parameters/permute", "/validation", "/studies"]),
+    (6, "semantics_integrity", ["/validation", "/execution", "/studies", "/chains", "/parameters", "/gates", "/outputs"]),
+    (7, "outputs_repro", ["/outputs", "/execution/permissions"]),
     (8, "governance_evolution", ["/dag", "/compat", "/meta"]),
 ]
 

@@ -18,7 +18,9 @@ This normative document defines the machine-checkable contract for `semantics_in
       "/execution",
       "/studies",
       "/chains",
-      "/parameters"
+      "/parameters",
+      "/gates",
+      "/outputs"
     ],
     "owned_defs": [],
     "notes": "Cross-layer semantic integrity and tripwires."
@@ -76,7 +78,9 @@ This normative document defines the machine-checkable contract for `semantics_in
                 "/execution",
                 "/studies",
                 "/chains",
-                "/parameters"
+                "/parameters",
+                "/gates",
+                "/outputs"
               ]
             }
           }
@@ -260,7 +264,9 @@ This normative document defines the machine-checkable contract for `semantics_in
                   "/execution",
                   "/studies",
                   "/chains",
-                  "/parameters"
+                  "/parameters",
+                  "/gates",
+                  "/outputs"
                 ]
               }
             }
@@ -747,8 +753,8 @@ This normative document defines the machine-checkable contract for `semantics_in
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:4afacf41e6da1df22fb1900b0cbc91fa284c94463ae8b8bac30604586ee53d41",
-    "contract_sha256": "sha256:4afacf41e6da1df22fb1900b0cbc91fa284c94463ae8b8bac30604586ee53d41"
+    "doc_sha256": "sha256:bd4754df554e8116069a36d57bce59352f25c3e555066df8f6f67fa0bbbe6219",
+    "contract_sha256": "sha256:bd4754df554e8116069a36d57bce59352f25c3e555066df8f6f67fa0bbbe6219"
   }
 }
 ```

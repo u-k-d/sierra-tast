@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace sre {
@@ -108,16 +109,20 @@ private:
 
 class ScopedPlanView {
 public:
-  ScopedPlanView(const sre::JsonValue& plan, std::vector<std::string> owned_pointers);
+  ScopedPlanView(std::string layer_id, const sre::JsonValue& plan, std::vector<std::string> owned_pointers);
 
   const sre::JsonValue& Plan() const;
+  const std::string& LayerId() const;
   const sre::JsonValue* Get(std::string_view pointer) const;
   bool Exists(std::string_view pointer) const;
   bool PointerInScope(std::string_view pointer) const;
+  std::vector<std::string> ConsumeOutOfScopePointers();
 
 private:
+  std::string layer_id_;
   const sre::JsonValue* plan_;
   std::vector<std::string> owned_pointers_;
+  mutable std::vector<std::string> out_of_scope_pointers_;
 };
 
 using LayerValidator = Status (*)(const ScopedPlanView&, DiagnosticSink&);
@@ -171,7 +176,9 @@ namespace sre {
 struct LayerManifest {
   std::string layer_id;
   std::vector<std::string> owned_pointers;
+  std::vector<std::string> error_codes;
   std::string primary_error_code;
+  JsonValue manifest;
   std::filesystem::path path;
 };
 
@@ -197,7 +204,7 @@ public:
 private:
   std::filesystem::path repo_root_;
   std::vector<LayerManifest> manifests_;
+  std::unordered_map<std::string, std::vector<std::string>> lock_allowed_layer_deps_;
 };
 
 }  // namespace sre
-

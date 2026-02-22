@@ -19,6 +19,8 @@
     "/execution",
     "/studies",
     "/chains",
-    "/parameters"
+    "/parameters",
+    "/gates",
+    "/outputs"
   ]
 }

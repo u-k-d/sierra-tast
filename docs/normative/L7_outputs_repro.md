@@ -14,7 +14,8 @@ This normative document defines the machine-checkable contract for `outputs_repr
   "layer_version": 1,
   "schema_scope": {
     "owned_pointers": [
-      "/outputs"
+      "/outputs",
+      "/execution/permissions"
     ],
     "owned_defs": [],
     "notes": "Dataset and reproducible artifact emission."
@@ -73,7 +74,8 @@ This normative document defines the machine-checkable contract for `outputs_repr
             "kind": "no_cross_layer_pointer_access",
             "params": {
               "owned_pointers": [
-                "/outputs"
+                "/outputs",
+                "/execution/permissions"
               ]
             }
           }
@@ -254,7 +256,8 @@ This normative document defines the machine-checkable contract for `outputs_repr
               "kind": "cnf_pointer_in_scope",
               "params": {
                 "pointers": [
-                  "/outputs"
+                  "/outputs",
+                  "/execution/permissions"
                 ]
               }
             }
@@ -657,8 +660,8 @@ This normative document defines the machine-checkable contract for `outputs_repr
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:44412eac39e0b77adfc7596d20f618e9bf085becc9a4f01f3212c4703d283eeb",
-    "contract_sha256": "sha256:44412eac39e0b77adfc7596d20f618e9bf085becc9a4f01f3212c4703d283eeb"
+    "doc_sha256": "sha256:0b5c6340c381eca37535e838b2640b1462163921ff7459228b9083b6bc5cb416",
+    "contract_sha256": "sha256:0b5c6340c381eca37535e838b2640b1462163921ff7459228b9083b6bc5cb416"
   }
 }
 ```

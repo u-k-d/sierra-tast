@@ -16,7 +16,9 @@ This normative document defines the machine-checkable contract for `rule_chain_d
     "owned_pointers": [
       "/chains",
       "/signals",
-      "/gates"
+      "/gates",
+      "/validation",
+      "/execution/backend/sierra_chart/layout_contract/readiness"
     ],
     "owned_defs": [],
     "notes": "Chains, gates and signals DSL compilation surface."
@@ -69,7 +71,9 @@ This normative document defines the machine-checkable contract for `rule_chain_d
               "owned_pointers": [
                 "/chains",
                 "/signals",
-                "/gates"
+                "/gates",
+                "/validation",
+                "/execution/backend/sierra_chart/layout_contract/readiness"
               ]
             }
           }
@@ -248,7 +252,9 @@ This normative document defines the machine-checkable contract for `rule_chain_d
                 "pointers": [
                   "/chains",
                   "/signals",
-                  "/gates"
+                  "/gates",
+                  "/validation",
+                  "/execution/backend/sierra_chart/layout_contract/readiness"
                 ]
               }
             }
@@ -651,8 +657,8 @@ This normative document defines the machine-checkable contract for `rule_chain_d
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:58ea20334086655664218af1059bc634f9de27bcd02f4f0268451626b7a27cec",
-    "contract_sha256": "sha256:58ea20334086655664218af1059bc634f9de27bcd02f4f0268451626b7a27cec"
+    "doc_sha256": "sha256:bcc7d3726cfb383e1d79af906d5bfde06e8f1412429d9abde813f9a90f43fddb",
+    "contract_sha256": "sha256:bcc7d3726cfb383e1d79af906d5bfde06e8f1412429d9abde813f9a90f43fddb"
   }
 }
 ```

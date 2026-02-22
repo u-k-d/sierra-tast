@@ -15,6 +15,7 @@
     "CHKGRP_DIAGNOSTICS"
   ],
   "owned_pointers": [
-    "/outputs"
+    "/outputs",
+    "/execution/permissions"
   ]
 }

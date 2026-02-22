@@ -17,6 +17,8 @@
   "owned_pointers": [
     "/chains",
     "/signals",
-    "/gates"
+    "/gates",
+    "/validation",
+    "/execution/backend/sierra_chart/layout_contract/readiness"
   ]
 }
