@@ -2,6 +2,9 @@
 #include "sre/runtime.hpp"
 #include "src/layers/common/layer_common.hpp"
 
+#include <cctype>
+#include <set>
+
 namespace sre::layers {
 
 Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSink& diag) noexcept {
@@ -42,7 +45,29 @@ Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSin
     }
   }
 
-  // Same-bar leakage tripwire placeholder: detect explicit same_bar source markers.
+  // Staleness tripwire: if sentinel mode is used, constant ready_value=1.0 is too weak.
+  if (plan_view.Exists("/execution/sentinel/enabled") && plan_view.Get("/execution/sentinel/enabled")->IsBool() &&
+      plan_view.Get("/execution/sentinel/enabled")->AsBool()) {
+    const auto* ready_value = plan_view.Get("/execution/sentinel/ready_value");
+    if (ready_value && ready_value->IsNumber() && ready_value->AsNumber() == 1.0) {
+      emit(
+          "CHK_SEM_STALENESS_SENTINEL_CONSTANT",
+          "Sentinel readiness uses constant ready_value=1.0 and may not be monotonic.",
+          "monotonic counter/timestamp-like readiness",
+          "constant ready_value=1.0",
+          "/execution/sentinel/ready_value");
+    }
+  }
+
+  std::set<std::string> gate_ids;
+  const auto* gates = plan_view.Get("/gates");
+  if (gates && gates->IsObject()) {
+    for (const auto& [k, _] : gates->AsObject().fields) {
+      gate_ids.insert(k);
+    }
+  }
+
+  // Same-bar leakage + gate correctness tripwires.
   const auto* chains = plan_view.Get("/chains");
   if (chains && chains->IsObject()) {
     for (const auto& [chain_id, chain_spec] : chains->AsObject().fields) {
@@ -58,15 +83,115 @@ Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSin
         if (!step.IsObject()) {
           continue;
         }
-        auto from_it = step.AsObject().fields.find("from");
-        if (from_it != step.AsObject().fields.end() && from_it->second.IsString() &&
-            from_it->second.AsString().find("same_bar") != std::string::npos) {
+        const std::string step_base = "/chains/" + chain_id + "/steps/" + std::to_string(i);
+        for (const auto& [field, value] : step.AsObject().fields) {
+          if (!value.IsString()) {
+            continue;
+          }
+          const std::string text = value.AsString();
+          if (text.find("same_bar") != std::string::npos || text.find("@bar.current") != std::string::npos || text.find("[0]") != std::string::npos) {
+            emit(
+                "CHK_SEM_SAME_BAR_LEAKAGE",
+                "Potential same-bar leakage marker in step string field.",
+                "no same_bar/@bar.current/[0] leakage markers",
+                text,
+                step_base + "/" + field);
+          }
+
+          // Gate references in step fields must resolve.
+          std::string token = "@gate.";
+          size_t pos = text.find(token);
+          while (pos != std::string::npos) {
+            size_t start = pos + token.size();
+            size_t end = start;
+            while (end < text.size() && (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_')) {
+              ++end;
+            }
+            const std::string gate_id = text.substr(start, end - start);
+            if (!gate_id.empty() && !gate_ids.contains(gate_id)) {
+              emit(
+                  "CHK_SEM_GATE_EXISTS",
+                  "Gate reference in step field does not resolve.",
+                  "existing gate id",
+                  gate_id,
+                  "/gates/" + gate_id);
+            }
+            pos = text.find(token, end);
+          }
+        }
+      }
+    }
+  }
+
+  // Permutation drift / mutation tripwire: study_input permutations in bind mode under managed-only policy.
+  const auto* perm_policy = plan_view.Get("/validation/sierra_study_input_permute_policy");
+  const bool managed_only_policy =
+      (!perm_policy) || (perm_policy->IsString() && perm_policy->AsString() == "managed_only");
+  const auto* permute = plan_view.Get("/parameters/permute");
+  if (permute && permute->IsArray()) {
+    for (size_t i = 0; i < permute->AsArray().items.size(); ++i) {
+      const auto& p = permute->AsArray().items[i];
+      if (!p.IsObject()) {
+        continue;
+      }
+      const auto& pf = p.AsObject().fields;
+      auto kind_it = pf.find("kind");
+      if (kind_it == pf.end() || !kind_it->second.IsString()) {
+        continue;
+      }
+      if (kind_it->second.AsString() != "study_input") {
+        continue;
+      }
+
+      if (managed_only_policy) {
+        std::string study_key;
+        auto study_it = pf.find("study");
+        if (study_it != pf.end() && study_it->second.IsString()) {
+          study_key = study_it->second.AsString();
+        }
+        if (!study_key.empty()) {
+          const auto* study_mode = plan_view.Get("/studies/" + study_key + "/mode");
+          if (study_mode && study_mode->IsString() && study_mode->AsString() == "bind") {
+            emit(
+                "CHK_SEM_PERMUTE_BIND_MODE_DRIFT",
+                "study_input permutation targets bind-mode study under managed_only policy.",
+                "managed study mode or allowlist_bind_mode policy",
+                "bind",
+                "/studies/" + study_key + "/mode");
+          }
+        }
+      }
+
+      if (perm_policy && perm_policy->IsString() && perm_policy->AsString() == "disabled") {
+        emit(
+            "CHK_SEM_PERMUTE_DISABLED_MUTATION",
+            "study_input permutation declared while permutation policy is disabled.",
+            "no study_input permutation items",
+            "study_input permutation present",
+            "/parameters/permute/" + std::to_string(i));
+      }
+    }
+  }
+
+  // Dedupe boundary tripwire: if dedupe_key fields are declared, they should include session boundary.
+  const auto* fields = plan_view.Get("/outputs/dataset/fields");
+  if (fields && fields->IsArray()) {
+    for (size_t i = 0; i < fields->AsArray().items.size(); ++i) {
+      const auto& f = fields->AsArray().items[i];
+      if (!f.IsObject()) {
+        continue;
+      }
+      const auto& ff = f.AsObject().fields;
+      auto id_it = ff.find("id");
+      auto from_it = ff.find("from");
+      if (id_it != ff.end() && id_it->second.IsString() && id_it->second.AsString().find("dedupe") != std::string::npos) {
+        if (from_it == ff.end() || !from_it->second.IsString() || from_it->second.AsString().find("session") == std::string::npos) {
           emit(
-              "CHK_SEM_SAME_BAR_LEAKAGE",
-              "same_bar marker found in step source; potential leakage.",
-              "no same_bar source marker",
-              from_it->second.AsString(),
-              "/chains/" + chain_id + "/steps/" + std::to_string(i) + "/from");
+              "CHK_SEM_DEDUPE_SESSION_BOUNDARY",
+              "Dedupe key field missing session boundary component.",
+              "dedupe key includes session boundary",
+              from_it == ff.end() ? "missing" : from_it->second.AsString(),
+              "/outputs/dataset/fields/" + std::to_string(i));
         }
       }
     }

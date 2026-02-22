@@ -50,6 +50,16 @@ Status ValidateSierraRuntimeTopology(const ScopedPlanView& plan_view, Diagnostic
       }
     }
 
+    auto controller_it = exec_fields.find("controller_chart");
+    if (controller_it != exec_fields.end() && (!IsIntegerLike(controller_it->second) || controller_it->second.AsNumber() < 1.0)) {
+      emit(
+          "CHK_CONTROLLER_CHART_VALUE",
+          "controller_chart must be integer >= 1 when provided.",
+          ">=1 integer",
+          controller_it->second.TypeName(),
+          "/execution/controller_chart");
+    }
+
     auto backend_it = exec_fields.find("backend");
     if (backend_it == exec_fields.end() || !backend_it->second.IsObject()) {
       emit(
@@ -105,6 +115,34 @@ Status ValidateSierraRuntimeTopology(const ScopedPlanView& plan_view, Diagnostic
     auto permissions_it = exec_fields.find("permissions");
     if (permissions_it != exec_fields.end() && !permissions_it->second.IsObject()) {
       emit("CHK_PERMISSIONS_OBJECT", "permissions must be an object when provided.", "object", permissions_it->second.TypeName(), "/execution/permissions");
+    }
+
+    auto sentinel_it = exec_fields.find("sentinel");
+    if (sentinel_it != exec_fields.end()) {
+      if (!sentinel_it->second.IsObject()) {
+        emit("CHK_SENTINEL_OBJECT", "sentinel must be object when provided.", "object", sentinel_it->second.TypeName(), "/execution/sentinel");
+      } else {
+        const auto& s = sentinel_it->second.AsObject().fields;
+        auto enabled_it = s.find("enabled");
+        const bool enabled = enabled_it == s.end() || (enabled_it->second.IsBool() && enabled_it->second.AsBool());
+        if (enabled_it != s.end() && !enabled_it->second.IsBool()) {
+          emit("CHK_SENTINEL_ENABLED", "sentinel.enabled must be boolean.", "bool", enabled_it->second.TypeName(), "/execution/sentinel/enabled");
+        }
+        if (enabled) {
+          auto study_it = s.find("study_id");
+          auto subgraph_it = s.find("subgraph");
+          auto timeout_it = s.find("timeout_cycles");
+          if (study_it != s.end() && (!IsIntegerLike(study_it->second) || study_it->second.AsNumber() < 1.0)) {
+            emit("CHK_SENTINEL_STUDY_ID", "sentinel.study_id must be integer >= 1.", ">=1 integer", study_it->second.TypeName(), "/execution/sentinel/study_id");
+          }
+          if (subgraph_it != s.end() && (!IsIntegerLike(subgraph_it->second) || subgraph_it->second.AsNumber() < 0.0)) {
+            emit("CHK_SENTINEL_SUBGRAPH", "sentinel.subgraph must be integer >= 0.", ">=0 integer", subgraph_it->second.TypeName(), "/execution/sentinel/subgraph");
+          }
+          if (timeout_it != s.end() && (!IsIntegerLike(timeout_it->second) || timeout_it->second.AsNumber() < 1.0)) {
+            emit("CHK_SENTINEL_TIMEOUT", "sentinel.timeout_cycles must be integer >= 1.", ">=1 integer", timeout_it->second.TypeName(), "/execution/sentinel/timeout_cycles");
+          }
+        }
+      }
     }
   }
 
