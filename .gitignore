@@ -9,4 +9,5 @@ artifacts/
 
 # Local Sierra Chart SDK/source mirror used for compilation.
 ACS_Source/
-
+__pycache__/
+*.pyc
