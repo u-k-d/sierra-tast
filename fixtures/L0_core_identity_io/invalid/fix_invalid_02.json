@@ -1,6 +1,6 @@
 {
   "version": 262,
-  "plan_kind": "sierra_research_engine.plan",
+  "plan_kind": "invalid.plan.kind",
   "plan_io": {
     "format": "json",
     "encoding": "utf-8"
@@ -63,9 +63,9 @@
   "meta": {
     "fixture_id": "L0_core_identity_io_invalid_02",
     "expected_error": "E_LAYER_CORE_IDENTITY_INVALID",
-    "invalid_pointer": "/version"
+    "invalid_pointer": "/plan_kind"
   },
   "compat": {
-    "invalid_case": true
+    "invalid_case": false
   }
 }

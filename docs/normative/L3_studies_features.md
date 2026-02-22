@@ -258,7 +258,7 @@ This normative document defines the machine-checkable contract for `studies_feat
         "kind": "diagnostics",
         "checks": [
           {
-            "id": "CHK_DIAG_INVALID_01",
+            "id": "CHK_STUDIES_OBJECT",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
@@ -270,26 +270,26 @@ This normative document defines the machine-checkable contract for `studies_feat
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_02",
+            "id": "CHK_STUDY_MODE",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_02",
                 "expected_code": "E_LAYER_STUDY_BINDING_INVALID",
-                "expected_blame_pointer": "/studies"
+                "expected_blame_pointer": "/studies/ema_fast/mode"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_03",
+            "id": "CHK_STUDY_OUTPUT_SUBGRAPH",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_03",
                 "expected_code": "E_LAYER_STUDY_BINDING_INVALID",
-                "expected_blame_pointer": "/studies"
+                "expected_blame_pointer": "/studies/ema_fast/outputs/value/subgraph"
               }
             }
           },
@@ -494,7 +494,7 @@ This normative document defines the machine-checkable contract for `studies_feat
           {
             "code": "E_LAYER_STUDY_BINDING_INVALID",
             "blame_pointers": [
-              "/studies"
+              "/studies/ema_fast/mode"
             ],
             "dag_node_ids": [
               "studies_features_node_02"
@@ -510,7 +510,7 @@ This normative document defines the machine-checkable contract for `studies_feat
           {
             "code": "E_LAYER_STUDY_BINDING_INVALID",
             "blame_pointers": [
-              "/studies"
+              "/studies/ema_fast/outputs/value/subgraph"
             ],
             "dag_node_ids": [
               "studies_features_node_03"
@@ -649,8 +649,8 @@ This normative document defines the machine-checkable contract for `studies_feat
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:b700383d9f4826898e14ef8092b62fc7e692f9ead6a62b15b4f04316d55d30d7",
-    "contract_sha256": "sha256:b700383d9f4826898e14ef8092b62fc7e692f9ead6a62b15b4f04316d55d30d7"
+    "doc_sha256": "sha256:7f8015f4a835fb02d07151a106133c145320612e37c1308a7931488b0ccd719e",
+    "contract_sha256": "sha256:8b86175d5c215a8feb33d7199cf3eb9b8da186e3318975ff66527cd7b3d7fc9c"
   }
 }
 ```

@@ -54,18 +54,18 @@
       "path": "out/data.csv",
       "fields": [
         {
-          "id": "ema",
-          "from": "@step.main.ema"
+          "id": "dedupe_key",
+          "from": "@step.main.id"
         }
       ]
     }
   },
   "meta": {
     "fixture_id": "L6_semantics_integrity_invalid_07",
-    "expected_error": "E_SEM_INTEGRITY_RULE_FAILED",
-    "invalid_pointer": "/validation"
+    "expected_error": "E_SEM_DEDUPE_SESSION_BOUNDARY_MISSING",
+    "invalid_pointer": "/outputs/dataset/fields/0"
   },
   "compat": {
-    "invalid_case": true
+    "invalid_case": false
   }
 }

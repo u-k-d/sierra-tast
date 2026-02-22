@@ -38,8 +38,12 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File tools/build_sre.ps1 -Compiler g++ -Config release -EnableAcsil:$false
       - name: Validate contracts
         run: python tools/validate_contracts.py
+      - name: Verify hash semantics
+        run: python tools/run_hash_semantics_checks.py
       - name: Runtime fixture checks
         run: python tools/run_fixture_runtime_checks.py
+      - name: Scope enforcement checks
+        run: python tools/run_scope_enforcement_checks.py
       - name: Semantic tripwire checks
         run: python tools/run_semantic_tripwire_checks.py
       - name: Permute policy checks

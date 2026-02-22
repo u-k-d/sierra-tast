@@ -5,21 +5,21 @@
       "fixture_id": "FIX_INVALID_01",
       "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
       "blame_pointers": [
-        "/execution"
+        "/execution/worker_charts"
       ]
     },
     {
       "fixture_id": "FIX_INVALID_02",
       "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
       "blame_pointers": [
-        "/execution"
+        "/execution/backend/type"
       ]
     },
     {
       "fixture_id": "FIX_INVALID_03",
       "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
       "blame_pointers": [
-        "/execution"
+        "/execution/backend/sierra_chart/layout_contract/readiness/ready_gate"
       ]
     },
     {

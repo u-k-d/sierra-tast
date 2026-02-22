@@ -29,14 +29,6 @@ def read_jsonl(path: Path) -> list[dict]:
     return rows
 
 
-def first_primary_error(manifest: dict) -> str:
-    for ec in manifest["public_api"]["error_codes"]:
-        code = ec["code"]
-        if code != "E_LAYER_AST_CHECK_FAILED":
-            return code
-    return "E_LAYER_AST_CHECK_FAILED"
-
-
 def diag_expectations_by_fixture(manifest: dict) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for group in manifest["normative_ast_checks"]["check_groups"]:
@@ -83,7 +75,6 @@ def main() -> int:
     for manifest_path in CONTRACTS:
         m = json.loads(manifest_path.read_text(encoding="utf-8"))
         layer_id = m["layer_id"]
-        expected_error = first_primary_error(m)
         diag_expect = diag_expectations_by_fixture(m)
 
         for fixture in m["fixtures"]["valid"]:
@@ -105,9 +96,6 @@ def main() -> int:
             if rc_invalid == 0:
                 failures.append(f"{layer_id}: invalid fixture {fixture_id} unexpectedly passed")
                 continue
-
-            if not any(d.get("code") == expected_error for d in diags):
-                failures.append(f"{layer_id}: invalid fixture {fixture_id} missing primary error {expected_error}")
 
             for expected in fixture.get("expect_errors", []):
                 code = expected.get("code", "")

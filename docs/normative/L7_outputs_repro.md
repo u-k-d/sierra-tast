@@ -269,38 +269,38 @@ This normative document defines the machine-checkable contract for `outputs_repr
         "kind": "diagnostics",
         "checks": [
           {
-            "id": "CHK_DIAG_INVALID_01",
+            "id": "CHK_DATASET_FORMAT",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_01",
                 "expected_code": "E_IO_OUTPUT_CONFIG_INVALID",
-                "expected_blame_pointer": "/outputs"
+                "expected_blame_pointer": "/outputs/dataset/format"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_02",
+            "id": "CHK_OUTPUT_FILESYSTEM_PERMISSION",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_02",
                 "expected_code": "E_IO_OUTPUT_CONFIG_INVALID",
-                "expected_blame_pointer": "/outputs"
+                "expected_blame_pointer": "/execution/permissions/allow_filesystem_write"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_03",
+            "id": "CHK_ARTIFACTS_WRITE_MANIFEST",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_03",
                 "expected_code": "E_IO_OUTPUT_CONFIG_INVALID",
-                "expected_blame_pointer": "/outputs"
+                "expected_blame_pointer": "/outputs/artifacts/write_run_manifest"
               }
             }
           },
@@ -489,7 +489,7 @@ This normative document defines the machine-checkable contract for `outputs_repr
           {
             "code": "E_IO_OUTPUT_CONFIG_INVALID",
             "blame_pointers": [
-              "/outputs"
+              "/outputs/dataset/format"
             ],
             "dag_node_ids": [
               "outputs_repro_node_01"
@@ -505,7 +505,7 @@ This normative document defines the machine-checkable contract for `outputs_repr
           {
             "code": "E_IO_OUTPUT_CONFIG_INVALID",
             "blame_pointers": [
-              "/outputs"
+              "/execution/permissions/allow_filesystem_write"
             ],
             "dag_node_ids": [
               "outputs_repro_node_02"
@@ -521,7 +521,7 @@ This normative document defines the machine-checkable contract for `outputs_repr
           {
             "code": "E_IO_OUTPUT_CONFIG_INVALID",
             "blame_pointers": [
-              "/outputs"
+              "/outputs/artifacts/write_run_manifest"
             ],
             "dag_node_ids": [
               "outputs_repro_node_03"
@@ -660,8 +660,8 @@ This normative document defines the machine-checkable contract for `outputs_repr
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:0b5c6340c381eca37535e838b2640b1462163921ff7459228b9083b6bc5cb416",
-    "contract_sha256": "sha256:0b5c6340c381eca37535e838b2640b1462163921ff7459228b9083b6bc5cb416"
+    "doc_sha256": "sha256:a9e0303d9b62d995356571cfba39d277fe08b8e561b277d78fe5dd1de0849219",
+    "contract_sha256": "sha256:a9c16750ebe5e6f8400be0c366a93d52097feb27cfb5cdfc2a7740e92abb6b7b"
   }
 }
 ```

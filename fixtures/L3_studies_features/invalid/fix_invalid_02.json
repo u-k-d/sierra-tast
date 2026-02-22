@@ -28,7 +28,7 @@
   },
   "studies": {
     "ema_fast": {
-      "mode": "managed",
+      "mode": "auto",
       "study_id": 1,
       "outputs": {
         "value": {
@@ -63,9 +63,9 @@
   "meta": {
     "fixture_id": "L3_studies_features_invalid_02",
     "expected_error": "E_LAYER_STUDY_BINDING_INVALID",
-    "invalid_pointer": "/studies"
+    "invalid_pointer": "/studies/ema_fast/mode"
   },
   "compat": {
-    "invalid_case": true
+    "invalid_case": false
   }
 }

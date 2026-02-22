@@ -256,38 +256,38 @@
         "kind": "diagnostics",
         "checks": [
           {
-            "id": "CHK_DIAG_INVALID_01",
+            "id": "CHK_PERMUTE_KIND",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_01",
                 "expected_code": "E_LAYER_PERMUTE_INVALID",
-                "expected_blame_pointer": "/parameters"
+                "expected_blame_pointer": "/parameters/permute/0/kind"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_02",
+            "id": "CHK_PERMUTE_POLICY_MANAGED_ONLY",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_02",
                 "expected_code": "E_LAYER_PERMUTE_INVALID",
-                "expected_blame_pointer": "/parameters"
+                "expected_blame_pointer": "/studies/ema_fast/mode"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_03",
+            "id": "CHK_PERMUTE_POLICY_DISABLED",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_03",
                 "expected_code": "E_LAYER_PERMUTE_INVALID",
-                "expected_blame_pointer": "/parameters"
+                "expected_blame_pointer": "/parameters/permute/0/kind"
               }
             }
           },
@@ -476,7 +476,7 @@
           {
             "code": "E_LAYER_PERMUTE_INVALID",
             "blame_pointers": [
-              "/parameters"
+              "/parameters/permute/0/kind"
             ],
             "dag_node_ids": [
               "experimentation_permute_node_01"
@@ -492,7 +492,7 @@
           {
             "code": "E_LAYER_PERMUTE_INVALID",
             "blame_pointers": [
-              "/parameters"
+              "/studies/ema_fast/mode"
             ],
             "dag_node_ids": [
               "experimentation_permute_node_02"
@@ -508,7 +508,7 @@
           {
             "code": "E_LAYER_PERMUTE_INVALID",
             "blame_pointers": [
-              "/parameters"
+              "/parameters/permute/0/kind"
             ],
             "dag_node_ids": [
               "experimentation_permute_node_03"
@@ -647,7 +647,7 @@
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:423e284a5ee105e658279ebf8b00bbe1395b2346c23e136544df5c45a76faae8",
-    "contract_sha256": "sha256:423e284a5ee105e658279ebf8b00bbe1395b2346c23e136544df5c45a76faae8"
+    "doc_sha256": "sha256:1ccf6b1eacecc4fa8ceb06f9bb31292721efbe737b638c28558f6573b2bf6c0a",
+    "contract_sha256": "sha256:163f5e6c26eaf95da8cccfb8a8a337ceb1081697a71dfb0ea561dd9628ef82c4"
   }
 }

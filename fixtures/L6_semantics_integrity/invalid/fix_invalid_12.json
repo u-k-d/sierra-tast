@@ -28,7 +28,7 @@
   },
   "studies": {
     "ema_fast": {
-      "mode": "managed",
+      "mode": "bind",
       "study_id": 1,
       "outputs": {
         "value": {
@@ -62,10 +62,27 @@
   },
   "meta": {
     "fixture_id": "L6_semantics_integrity_invalid_12",
-    "expected_error": "E_SEM_INTEGRITY_RULE_FAILED",
-    "invalid_pointer": "/validation"
+    "expected_error": "E_SEM_PERMUTE_BIND_MODE_DRIFT",
+    "invalid_pointer": "/studies/ema_fast/mode"
+  },
+  "validation": {
+    "sierra_study_input_permute_policy": "managed_only"
+  },
+  "parameters": {
+    "permute": [
+      {
+        "id": "p3",
+        "kind": "study_input",
+        "study": "ema_fast",
+        "input": "len2",
+        "values": [
+          1,
+          2
+        ]
+      }
+    ]
   },
   "compat": {
-    "invalid_case": true
+    "invalid_case": false
   }
 }

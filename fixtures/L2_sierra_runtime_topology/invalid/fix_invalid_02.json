@@ -22,7 +22,7 @@
       2
     ],
     "backend": {
-      "type": "sierra_chart",
+      "type": "other_backend",
       "sierra_chart": {}
     }
   },
@@ -63,9 +63,9 @@
   "meta": {
     "fixture_id": "L2_sierra_runtime_topology_invalid_02",
     "expected_error": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
-    "invalid_pointer": "/execution"
+    "invalid_pointer": "/execution/backend/type"
   },
   "compat": {
-    "invalid_case": true
+    "invalid_case": false
   }
 }

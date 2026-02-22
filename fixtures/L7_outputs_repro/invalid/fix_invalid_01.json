@@ -50,7 +50,7 @@
   },
   "outputs": {
     "dataset": {
-      "format": "csv",
+      "format": "xml",
       "path": "out/data.csv",
       "fields": [
         {
@@ -63,9 +63,9 @@
   "meta": {
     "fixture_id": "L7_outputs_repro_invalid_01",
     "expected_error": "E_IO_OUTPUT_CONFIG_INVALID",
-    "invalid_pointer": "/outputs"
+    "invalid_pointer": "/outputs/dataset/format"
   },
   "compat": {
-    "invalid_case": true
+    "invalid_case": false
   }
 }

@@ -43,7 +43,8 @@
         {
           "kind": "emit",
           "from": "@study.ema_fast.value",
-          "as": "ema"
+          "as": "ema",
+          "when": "@gate.missing_gate"
         }
       ]
     }
@@ -62,10 +63,10 @@
   },
   "meta": {
     "fixture_id": "L6_semantics_integrity_invalid_04",
-    "expected_error": "E_SEM_INTEGRITY_RULE_FAILED",
-    "invalid_pointer": "/validation"
+    "expected_error": "E_SEM_GATE_REFERENCE_MISSING",
+    "invalid_pointer": "/gates/missing_gate"
   },
   "compat": {
-    "invalid_case": true
+    "invalid_case": false
   }
 }

@@ -1,6 +1,6 @@
 ﻿import json
-import hashlib
 from pathlib import Path
+from hash_semantics import contract_sha256, doc_sha256
 
 ROOT = Path(r"e:/sre_spec_bundle")
 
@@ -23,7 +23,7 @@ LAYER_ERROR = {
     "studies_features": "E_LAYER_STUDY_BINDING_INVALID",
     "rule_chain_dsl": "E_LAYER_CHAIN_DSL_INVALID",
     "experimentation_permute": "E_LAYER_PERMUTE_INVALID",
-    "semantics_integrity": "E_SEM_INTEGRITY_RULE_FAILED",
+    "semantics_integrity": "E_SEM_SAME_BAR_LEAKAGE",
     "outputs_repro": "E_IO_OUTPUT_CONFIG_INVALID",
     "governance_evolution": "E_LAYER_GOVERNANCE_INVALID",
 }
@@ -53,14 +53,6 @@ with (ROOT / "layers.lock.json").open("r", encoding="utf-8") as f:
 
 interface_versions = {x["interface_id"]: x["version"] for x in lock["interfaces"]}
 allowed_dep_map = {x["from"]: x for x in lock["allowed_deps"]}
-
-
-def sha256_text(s: str) -> str:
-    return "sha256:" + hashlib.sha256(s.encode("utf-8")).hexdigest()
-
-
-def canonical(obj) -> str:
-    return json.dumps(obj, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
 
 def write_json(path: Path, obj):
@@ -357,13 +349,22 @@ for n, layer_id, pointers in LAYER_ORDER:
         },
     }
 
-    without_hash = canonical(contract)
-    contract_hash = sha256_text(without_hash)
+    contract_hash = contract_sha256(contract)
     contract["hashes"] = {
-        "doc_sha256": contract_hash,
+        "doc_sha256": "sha256:" + ("0" * 64),
         "contract_sha256": contract_hash,
     }
 
+    layer_doc = (
+        f"# {layer_tag} Normative Specification\n\n"
+        f"Layer: `{layer_id}`\n\n"
+        f"This normative document defines the machine-checkable contract for `{layer_id}`.\n\n"
+        "## Contract Block\n\n"
+        "```json\n"
+        f"{json.dumps(contract, indent=2, ensure_ascii=True)}\n"
+        "```\n"
+    )
+    contract["hashes"]["doc_sha256"] = doc_sha256(layer_doc)
     layer_doc = (
         f"# {layer_tag} Normative Specification\n\n"
         f"Layer: `{layer_id}`\n\n"

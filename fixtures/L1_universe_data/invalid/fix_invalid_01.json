@@ -7,10 +7,6 @@
   },
   "universe": {
     "source": "inline",
-    "symbols": [
-      "ES",
-      "NQ"
-    ],
     "timeframe": "5m",
     "date_range": {
       "start": "2025-01-01",
@@ -63,9 +59,9 @@
   "meta": {
     "fixture_id": "L1_universe_data_invalid_01",
     "expected_error": "E_LAYER_UNIVERSE_INVALID",
-    "invalid_pointer": "/universe"
+    "invalid_pointer": "/universe/symbols"
   },
   "compat": {
-    "invalid_case": true
+    "invalid_case": false
   }
 }

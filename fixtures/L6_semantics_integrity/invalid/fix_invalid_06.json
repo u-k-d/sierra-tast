@@ -62,10 +62,27 @@
   },
   "meta": {
     "fixture_id": "L6_semantics_integrity_invalid_06",
-    "expected_error": "E_SEM_INTEGRITY_RULE_FAILED",
-    "invalid_pointer": "/validation"
+    "expected_error": "E_SEM_PERMUTE_POLICY_DISABLED",
+    "invalid_pointer": "/parameters/permute/0"
+  },
+  "validation": {
+    "sierra_study_input_permute_policy": "disabled"
+  },
+  "parameters": {
+    "permute": [
+      {
+        "id": "p2",
+        "kind": "study_input",
+        "study": "ema_fast",
+        "input": "length",
+        "values": [
+          5,
+          10
+        ]
+      }
+    ]
   },
   "compat": {
-    "invalid_case": true
+    "invalid_case": false
   }
 }

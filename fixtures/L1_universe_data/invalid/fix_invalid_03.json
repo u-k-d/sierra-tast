@@ -11,7 +11,7 @@
       "ES",
       "NQ"
     ],
-    "timeframe": "5m",
+    "timeframe": "5x",
     "date_range": {
       "start": "2025-01-01",
       "end": "2025-01-31"
@@ -63,9 +63,9 @@
   "meta": {
     "fixture_id": "L1_universe_data_invalid_03",
     "expected_error": "E_LAYER_UNIVERSE_INVALID",
-    "invalid_pointer": "/universe"
+    "invalid_pointer": "/universe/timeframe"
   },
   "compat": {
-    "invalid_case": true
+    "invalid_case": false
   }
 }

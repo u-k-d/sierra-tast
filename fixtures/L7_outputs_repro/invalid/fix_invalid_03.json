@@ -58,14 +58,18 @@
           "from": "@step.main.ema"
         }
       ]
+    },
+    "artifacts": {
+      "enabled": true,
+      "write_run_manifest": "yes"
     }
   },
   "meta": {
     "fixture_id": "L7_outputs_repro_invalid_03",
     "expected_error": "E_IO_OUTPUT_CONFIG_INVALID",
-    "invalid_pointer": "/outputs"
+    "invalid_pointer": "/outputs/artifacts/write_run_manifest"
   },
   "compat": {
-    "invalid_case": true
+    "invalid_case": false
   }
 }

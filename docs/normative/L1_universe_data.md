@@ -250,38 +250,38 @@ This normative document defines the machine-checkable contract for `universe_dat
         "kind": "diagnostics",
         "checks": [
           {
-            "id": "CHK_DIAG_INVALID_01",
+            "id": "CHK_UNIVERSE_INLINE_SYMBOLS",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_01",
                 "expected_code": "E_LAYER_UNIVERSE_INVALID",
-                "expected_blame_pointer": "/universe"
+                "expected_blame_pointer": "/universe/symbols"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_02",
+            "id": "CHK_UNIVERSE_FILE_OBJECT",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_02",
                 "expected_code": "E_LAYER_UNIVERSE_INVALID",
-                "expected_blame_pointer": "/universe"
+                "expected_blame_pointer": "/universe/file"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_03",
+            "id": "CHK_UNIVERSE_TIMEFRAME",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_03",
                 "expected_code": "E_LAYER_UNIVERSE_INVALID",
-                "expected_blame_pointer": "/universe"
+                "expected_blame_pointer": "/universe/timeframe"
               }
             }
           },
@@ -470,7 +470,7 @@ This normative document defines the machine-checkable contract for `universe_dat
           {
             "code": "E_LAYER_UNIVERSE_INVALID",
             "blame_pointers": [
-              "/universe"
+              "/universe/symbols"
             ],
             "dag_node_ids": [
               "universe_data_node_01"
@@ -486,7 +486,7 @@ This normative document defines the machine-checkable contract for `universe_dat
           {
             "code": "E_LAYER_UNIVERSE_INVALID",
             "blame_pointers": [
-              "/universe"
+              "/universe/file"
             ],
             "dag_node_ids": [
               "universe_data_node_02"
@@ -502,7 +502,7 @@ This normative document defines the machine-checkable contract for `universe_dat
           {
             "code": "E_LAYER_UNIVERSE_INVALID",
             "blame_pointers": [
-              "/universe"
+              "/universe/timeframe"
             ],
             "dag_node_ids": [
               "universe_data_node_03"
@@ -641,8 +641,8 @@ This normative document defines the machine-checkable contract for `universe_dat
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:2cc9f77516dece9ec3f0a90372a6ec67a262f0d1f2a15a2274d0a2ee0d1f3530",
-    "contract_sha256": "sha256:2cc9f77516dece9ec3f0a90372a6ec67a262f0d1f2a15a2274d0a2ee0d1f3530"
+    "doc_sha256": "sha256:19e5868a385bade6da4232af81c861fcf5098b9f4defcfad60ad18b01383135a",
+    "contract_sha256": "sha256:9356a088ac2c43deb91992acc1282de55a1ad7be0e15f892b02f81afddbeba11"
   }
 }
 ```

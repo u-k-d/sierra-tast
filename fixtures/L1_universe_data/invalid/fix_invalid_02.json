@@ -6,7 +6,7 @@
     "encoding": "utf-8"
   },
   "universe": {
-    "source": "inline",
+    "source": "file",
     "symbols": [
       "ES",
       "NQ"
@@ -63,9 +63,9 @@
   "meta": {
     "fixture_id": "L1_universe_data_invalid_02",
     "expected_error": "E_LAYER_UNIVERSE_INVALID",
-    "invalid_pointer": "/universe"
+    "invalid_pointer": "/universe/file"
   },
   "compat": {
-    "invalid_case": true
+    "invalid_case": false
   }
 }

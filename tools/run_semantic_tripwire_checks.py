@@ -30,8 +30,8 @@ def run(plan: dict, name: str) -> tuple[int, list[dict]]:
         return proc.returncode, diags
 
 
-def has_sem(diags: list[dict], check_id: str) -> bool:
-    return any(d.get("code") == "E_SEM_INTEGRITY_RULE_FAILED" and d.get("check_id") == check_id for d in diags)
+def has_sem(diags: list[dict], check_id: str, code: str) -> bool:
+    return any(d.get("code") == code and d.get("check_id") == check_id for d in diags)
 
 
 def main() -> int:
@@ -43,12 +43,12 @@ def main() -> int:
 
     c1 = json.loads(json.dumps(base))
     c1["chains"]["main"]["steps"][0]["from"] = "@bar.current.same_bar"
-    cases.append(("same_bar_leakage", c1, "CHK_SEM_SAME_BAR_LEAKAGE"))
+    cases.append(("same_bar_leakage", c1, "CHK_SEM_SAME_BAR_LEAKAGE", "E_SEM_SAME_BAR_LEAKAGE"))
 
     c2 = json.loads(json.dumps(base))
     c2.setdefault("validation", {})["require_sierra_readiness_contract"] = True
     c2.setdefault("execution", {})["sentinel"] = {"enabled": True, "ready_value": 1.0, "study_id": 1, "subgraph": 0}
-    cases.append(("sentinel_staleness", c2, "CHK_SEM_STALENESS_SENTINEL_CONSTANT"))
+    cases.append(("sentinel_staleness", c2, "CHK_SEM_STALENESS_SENTINEL_CONSTANT", "E_SEM_STALE_WORKER_DATA"))
 
     c3 = json.loads(json.dumps(base))
     c3.setdefault("validation", {})["sierra_study_input_permute_policy"] = "managed_only"
@@ -56,24 +56,24 @@ def main() -> int:
     c3.setdefault("parameters", {})["permute"] = [
         {"id": "p1", "kind": "study_input", "study": "ema_fast", "input": "len", "values": [10, 20]}
     ]
-    cases.append(("permute_bind_drift", c3, "CHK_SEM_PERMUTE_BIND_MODE_DRIFT"))
+    cases.append(("permute_bind_drift", c3, "CHK_SEM_PERMUTE_BIND_MODE_DRIFT", "E_SEM_PERMUTE_BIND_MODE_DRIFT"))
 
     c4 = json.loads(json.dumps(base))
     c4["chains"]["main"]["steps"][0]["when"] = "@gate.missing_gate"
-    cases.append(("missing_gate_ref", c4, "CHK_SEM_GATE_EXISTS"))
+    cases.append(("missing_gate_ref", c4, "CHK_SEM_GATE_EXISTS", "E_SEM_GATE_REFERENCE_MISSING"))
 
     c5 = json.loads(json.dumps(base))
     c5["outputs"]["dataset"]["fields"] = [{"id": "dedupe_key", "from": "@step.main.id"}]
-    cases.append(("dedupe_session_boundary", c5, "CHK_SEM_DEDUPE_SESSION_BOUNDARY"))
+    cases.append(("dedupe_session_boundary", c5, "CHK_SEM_DEDUPE_SESSION_BOUNDARY", "E_SEM_DEDUPE_SESSION_BOUNDARY_MISSING"))
 
     failures: list[str] = []
-    for name, plan, expected_check in cases:
+    for name, plan, expected_check, expected_code in cases:
         rc, diags = run(plan, name)
         if rc == 0:
             failures.append(f"{name}: expected semantic failure but rc=0")
             continue
-        if not has_sem(diags, expected_check):
-            failures.append(f"{name}: missing expected semantic check {expected_check}")
+        if not has_sem(diags, expected_check, expected_code):
+            failures.append(f"{name}: missing expected semantic diagnostic {expected_code}/{expected_check}")
 
     if failures:
         for f in failures:
@@ -85,4 +85,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

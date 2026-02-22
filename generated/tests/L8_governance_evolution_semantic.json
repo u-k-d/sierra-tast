@@ -5,21 +5,21 @@
       "fixture_id": "FIX_INVALID_01",
       "code": "E_LAYER_GOVERNANCE_INVALID",
       "blame_pointers": [
-        "/dag"
+        "/meta/engine_capabilities_required/0"
       ]
     },
     {
       "fixture_id": "FIX_INVALID_02",
       "code": "E_LAYER_GOVERNANCE_INVALID",
       "blame_pointers": [
-        "/dag"
+        "/dag/nodes/0/parents/0"
       ]
     },
     {
       "fixture_id": "FIX_INVALID_03",
       "code": "E_LAYER_GOVERNANCE_INVALID",
       "blame_pointers": [
-        "/dag"
+        "/meta/engine_capabilities_optional"
       ]
     },
     {

@@ -252,7 +252,7 @@
         "kind": "diagnostics",
         "checks": [
           {
-            "id": "CHK_DIAG_INVALID_01",
+            "id": "CHK_VERSION_CONST",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
@@ -264,26 +264,26 @@
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_02",
+            "id": "CHK_PLAN_KIND_CONST",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_02",
                 "expected_code": "E_LAYER_CORE_IDENTITY_INVALID",
-                "expected_blame_pointer": "/version"
+                "expected_blame_pointer": "/plan_kind"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_03",
+            "id": "CHK_PLAN_IO_FORMAT",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_03",
                 "expected_code": "E_LAYER_CORE_IDENTITY_INVALID",
-                "expected_blame_pointer": "/version"
+                "expected_blame_pointer": "/plan_io/format"
               }
             }
           },
@@ -488,7 +488,7 @@
           {
             "code": "E_LAYER_CORE_IDENTITY_INVALID",
             "blame_pointers": [
-              "/version"
+              "/plan_kind"
             ],
             "dag_node_ids": [
               "core_identity_io_node_02"
@@ -504,7 +504,7 @@
           {
             "code": "E_LAYER_CORE_IDENTITY_INVALID",
             "blame_pointers": [
-              "/version"
+              "/plan_io/format"
             ],
             "dag_node_ids": [
               "core_identity_io_node_03"
@@ -643,7 +643,7 @@
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:5a47a0dbcc55626128814c94bd50db85b906110898e3e69003573dc65635bbce",
-    "contract_sha256": "sha256:5a47a0dbcc55626128814c94bd50db85b906110898e3e69003573dc65635bbce"
+    "doc_sha256": "sha256:eb26fb939e21cd72c22c71284e1458b0c2751e937a14aeb72364fa38f773586f",
+    "contract_sha256": "sha256:c325c9b543f3b85c0a3dd93dbd5725ede8bad88cfe00b1297a300a3871720042"
   }
 }

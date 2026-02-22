@@ -9,11 +9,17 @@ namespace sre::layers {
 
 Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSink& diag) noexcept {
   bool ok = true;
-  auto emit = [&](std::string check_id, std::string reason, std::string expected, std::string actual, std::string pointer) {
+  auto emit = [&](
+                  std::string code,
+                  std::string check_id,
+                  std::string reason,
+                  std::string expected,
+                  std::string actual,
+                  std::string pointer) {
     EmitLayerError(
         diag,
         "semantics_integrity",
-        "E_SEM_INTEGRITY_RULE_FAILED",
+        std::move(code),
         std::move(check_id),
         "CHKGRP_PLAN_AST_SHAPE",
         std::move(reason),
@@ -24,13 +30,20 @@ Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSin
         "contracts/L6_semantics_integrity.manifest.json");
     ok = false;
   };
-  auto emit_policy = [&](std::string check_id, std::string reason, std::string expected, std::string actual, std::string pointer, std::string on_violation) {
+  auto emit_policy = [&](
+                         std::string code,
+                         std::string check_id,
+                         std::string reason,
+                         std::string expected,
+                         std::string actual,
+                         std::string pointer,
+                         std::string on_violation) {
     if (on_violation == "error") {
-      emit(std::move(check_id), std::move(reason), std::move(expected), std::move(actual), std::move(pointer));
+      emit(std::move(code), std::move(check_id), std::move(reason), std::move(expected), std::move(actual), std::move(pointer));
       return;
     }
     Diagnostic d;
-    d.code = "E_SEM_INTEGRITY_RULE_FAILED";
+    d.code = std::move(code);
     d.layer_id = "semantics_integrity";
     d.check_id = std::move(check_id);
     d.group_id = "CHKGRP_PLAN_AST_SHAPE";
@@ -57,6 +70,7 @@ Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSin
         plan_view.Get("/execution/backend/sierra_chart/layout_contract/readiness/mode")->AsString() == "gate";
     if (!sentinel_enabled && !gate_mode) {
       emit(
+          "E_SEM_READINESS_CONTRACT_MISSING",
           "CHK_READINESS_CONTRACT",
           "readiness contract required but neither sentinel nor gate readiness configured.",
           "sentinel.enabled=true or readiness.mode=gate",
@@ -71,6 +85,7 @@ Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSin
     const auto* ready_value = plan_view.Get("/execution/sentinel/ready_value");
     if (ready_value && ready_value->IsNumber() && ready_value->AsNumber() == 1.0) {
       emit(
+          "E_SEM_STALE_WORKER_DATA",
           "CHK_SEM_STALENESS_SENTINEL_CONSTANT",
           "Sentinel readiness uses constant ready_value=1.0 and may not be monotonic.",
           "monotonic counter/timestamp-like readiness",
@@ -111,6 +126,7 @@ Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSin
           const std::string text = value.AsString();
           if (text.find("same_bar") != std::string::npos || text.find("@bar.current") != std::string::npos || text.find("[0]") != std::string::npos) {
             emit(
+                "E_SEM_SAME_BAR_LEAKAGE",
                 "CHK_SEM_SAME_BAR_LEAKAGE",
                 "Potential same-bar leakage marker in step string field.",
                 "no same_bar/@bar.current/[0] leakage markers",
@@ -130,6 +146,7 @@ Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSin
             const std::string gate_id = text.substr(start, end - start);
             if (!gate_id.empty() && !gate_ids.contains(gate_id)) {
               emit(
+                  "E_SEM_GATE_REFERENCE_MISSING",
                   "CHK_SEM_GATE_EXISTS",
                   "Gate reference in step field does not resolve.",
                   "existing gate id",
@@ -176,6 +193,7 @@ Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSin
           const auto* study_mode = plan_view.Get("/studies/" + study_key + "/mode");
           if (study_mode && study_mode->IsString() && study_mode->AsString() == "bind") {
             emit_policy(
+                "E_SEM_PERMUTE_BIND_MODE_DRIFT",
                 "CHK_SEM_PERMUTE_BIND_MODE_DRIFT",
                 "study_input permutation targets bind-mode study under managed_only policy.",
                 "managed study mode or allowlist_bind_mode policy",
@@ -188,6 +206,7 @@ Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSin
 
       if (perm_policy && perm_policy->IsString() && perm_policy->AsString() == "disabled") {
         emit_policy(
+            "E_SEM_PERMUTE_POLICY_DISABLED",
             "CHK_SEM_PERMUTE_DISABLED_MUTATION",
             "study_input permutation declared while permutation policy is disabled.",
             "no study_input permutation items",
@@ -212,6 +231,7 @@ Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSin
       if (id_it != ff.end() && id_it->second.IsString() && id_it->second.AsString().find("dedupe") != std::string::npos) {
         if (from_it == ff.end() || !from_it->second.IsString() || from_it->second.AsString().find("session") == std::string::npos) {
           emit(
+              "E_SEM_DEDUPE_SESSION_BOUNDARY_MISSING",
               "CHK_SEM_DEDUPE_SESSION_BOUNDARY",
               "Dedupe key field missing session boundary component.",
               "dedupe key includes session boundary",
@@ -220,16 +240,6 @@ Status ValidateSemanticsIntegrity(const ScopedPlanView& plan_view, DiagnosticSin
         }
       }
     }
-  }
-
-  if (EmitFixtureMarkerViolation(
-          plan_view,
-          diag,
-          "semantics_integrity",
-          "E_SEM_INTEGRITY_RULE_FAILED",
-          "/validation",
-          "CHK_SEMANTICS_FIXTURE_MARKER")) {
-    ok = false;
   }
   return ok ? Status::Success() : Status::Failure();
 }

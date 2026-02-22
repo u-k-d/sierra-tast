@@ -1,7 +1,8 @@
 import json
-import hashlib
 import re
 from pathlib import Path
+
+from hash_semantics import contract_sha256, doc_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = json.loads((ROOT / "layers.lock.json").read_text(encoding="utf-8"))
@@ -18,15 +19,6 @@ try:
     import jsonschema
 except Exception:
     jsonschema = None
-
-
-def canonical(obj):
-    return json.dumps(obj, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
-
-
-def sha256_text(s: str) -> str:
-    return "sha256:" + hashlib.sha256(s.encode("utf-8")).hexdigest()
-
 
 def extract_doc_contract(doc_path: Path):
     text = doc_path.read_text(encoding="utf-8")
@@ -83,15 +75,16 @@ for mp in manifest_paths:
         except Exception as ex:
             raise SystemExit(f"{lid}: meta-schema validation failed: {ex}") from ex
 
-    # Validate manifest hash fields.
+    # Validate distinct hash semantics.
     hashes = m.get("hashes")
     if not isinstance(hashes, dict) or "doc_sha256" not in hashes or "contract_sha256" not in hashes:
         raise SystemExit(f"{lid}: missing hash fields")
-    no_hash = dict(m)
-    no_hash.pop("hashes", None)
-    expected_hash = sha256_text(canonical(no_hash))
-    if hashes["doc_sha256"] != expected_hash or hashes["contract_sha256"] != expected_hash:
-        raise SystemExit(f"{lid}: hash mismatch with canonical contract content")
+    expected_contract_hash = contract_sha256(m)
+    expected_doc_hash = doc_sha256(doc_path.read_text(encoding="utf-8"))
+    if hashes["contract_sha256"] != expected_contract_hash:
+        raise SystemExit(f"{lid}: contract_sha256 mismatch with canonical contract payload")
+    if hashes["doc_sha256"] != expected_doc_hash:
+        raise SystemExit(f"{lid}: doc_sha256 mismatch with normalized doc content")
 
     declared_layers = set(m["dependencies"]["allowed_layer_ids"])
     if not declared_layers.issubset(set(dep["to_layers"])):

@@ -145,10 +145,46 @@ This normative document defines the machine-checkable contract for `semantics_in
     ],
     "error_codes": [
       {
-        "code": "E_SEM_INTEGRITY_RULE_FAILED",
+        "code": "E_SEM_SAME_BAR_LEAKAGE",
         "layer_id": "semantics_integrity",
         "severity": "error",
-        "message_template": "semantics_integrity contract violation: {reason}"
+        "message_template": "semantic integrity violation: same-bar leakage: {reason}"
+      },
+      {
+        "code": "E_SEM_STALE_WORKER_DATA",
+        "layer_id": "semantics_integrity",
+        "severity": "error",
+        "message_template": "semantic integrity violation: stale worker data: {reason}"
+      },
+      {
+        "code": "E_SEM_READINESS_CONTRACT_MISSING",
+        "layer_id": "semantics_integrity",
+        "severity": "error",
+        "message_template": "semantic integrity violation: readiness contract missing: {reason}"
+      },
+      {
+        "code": "E_SEM_GATE_REFERENCE_MISSING",
+        "layer_id": "semantics_integrity",
+        "severity": "error",
+        "message_template": "semantic integrity violation: gate reference missing: {reason}"
+      },
+      {
+        "code": "E_SEM_PERMUTE_BIND_MODE_DRIFT",
+        "layer_id": "semantics_integrity",
+        "severity": "error",
+        "message_template": "semantic integrity violation: bind-mode permutation drift: {reason}"
+      },
+      {
+        "code": "E_SEM_PERMUTE_POLICY_DISABLED",
+        "layer_id": "semantics_integrity",
+        "severity": "error",
+        "message_template": "semantic integrity violation: permutation disabled policy breach: {reason}"
+      },
+      {
+        "code": "E_SEM_DEDUPE_SESSION_BOUNDARY_MISSING",
+        "layer_id": "semantics_integrity",
+        "severity": "error",
+        "message_template": "semantic integrity violation: dedupe session boundary missing: {reason}"
       },
       {
         "code": "E_LAYER_AST_CHECK_FAILED",
@@ -278,158 +314,158 @@ This normative document defines the machine-checkable contract for `semantics_in
         "kind": "diagnostics",
         "checks": [
           {
-            "id": "CHK_DIAG_INVALID_01",
+            "id": "CHK_SEM_SAME_BAR_LEAKAGE",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_01",
-                "expected_code": "E_SEM_INTEGRITY_RULE_FAILED",
-                "expected_blame_pointer": "/validation"
+                "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
+                "expected_blame_pointer": "/chains/main/steps/0/from"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_02",
+            "id": "CHK_SEM_STALENESS_SENTINEL_CONSTANT",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_02",
-                "expected_code": "E_SEM_INTEGRITY_RULE_FAILED",
-                "expected_blame_pointer": "/validation"
+                "expected_code": "E_SEM_STALE_WORKER_DATA",
+                "expected_blame_pointer": "/execution/sentinel/ready_value"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_03",
+            "id": "CHK_READINESS_CONTRACT",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_03",
-                "expected_code": "E_SEM_INTEGRITY_RULE_FAILED",
-                "expected_blame_pointer": "/validation"
+                "expected_code": "E_SEM_READINESS_CONTRACT_MISSING",
+                "expected_blame_pointer": "/execution"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_04",
+            "id": "CHK_SEM_GATE_EXISTS",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_04",
-                "expected_code": "E_SEM_INTEGRITY_RULE_FAILED",
-                "expected_blame_pointer": "/validation"
+                "expected_code": "E_SEM_GATE_REFERENCE_MISSING",
+                "expected_blame_pointer": "/gates/missing_gate"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_05",
+            "id": "CHK_SEM_PERMUTE_BIND_MODE_DRIFT",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_05",
-                "expected_code": "E_SEM_INTEGRITY_RULE_FAILED",
-                "expected_blame_pointer": "/validation"
+                "expected_code": "E_SEM_PERMUTE_BIND_MODE_DRIFT",
+                "expected_blame_pointer": "/studies/ema_fast/mode"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_06",
+            "id": "CHK_SEM_PERMUTE_DISABLED_MUTATION",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_06",
-                "expected_code": "E_SEM_INTEGRITY_RULE_FAILED",
-                "expected_blame_pointer": "/validation"
+                "expected_code": "E_SEM_PERMUTE_POLICY_DISABLED",
+                "expected_blame_pointer": "/parameters/permute/0"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_07",
+            "id": "CHK_SEM_DEDUPE_SESSION_BOUNDARY",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_07",
-                "expected_code": "E_SEM_INTEGRITY_RULE_FAILED",
-                "expected_blame_pointer": "/validation"
+                "expected_code": "E_SEM_DEDUPE_SESSION_BOUNDARY_MISSING",
+                "expected_blame_pointer": "/outputs/dataset/fields/0"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_08",
+            "id": "CHK_SEM_SAME_BAR_LEAKAGE",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_08",
-                "expected_code": "E_SEM_INTEGRITY_RULE_FAILED",
-                "expected_blame_pointer": "/validation"
+                "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
+                "expected_blame_pointer": "/chains/main/steps/0/from"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_09",
+            "id": "CHK_SEM_GATE_EXISTS",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_09",
-                "expected_code": "E_SEM_INTEGRITY_RULE_FAILED",
-                "expected_blame_pointer": "/validation"
+                "expected_code": "E_SEM_GATE_REFERENCE_MISSING",
+                "expected_blame_pointer": "/gates/ghost_gate"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_10",
+            "id": "CHK_SEM_STALENESS_SENTINEL_CONSTANT",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_10",
-                "expected_code": "E_SEM_INTEGRITY_RULE_FAILED",
-                "expected_blame_pointer": "/validation"
+                "expected_code": "E_SEM_STALE_WORKER_DATA",
+                "expected_blame_pointer": "/execution/sentinel/ready_value"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_11",
+            "id": "CHK_READINESS_CONTRACT",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_11",
-                "expected_code": "E_SEM_INTEGRITY_RULE_FAILED",
-                "expected_blame_pointer": "/validation"
+                "expected_code": "E_SEM_READINESS_CONTRACT_MISSING",
+                "expected_blame_pointer": "/execution"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_12",
+            "id": "CHK_SEM_PERMUTE_BIND_MODE_DRIFT",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_12",
-                "expected_code": "E_SEM_INTEGRITY_RULE_FAILED",
-                "expected_blame_pointer": "/validation"
+                "expected_code": "E_SEM_PERMUTE_BIND_MODE_DRIFT",
+                "expected_blame_pointer": "/studies/ema_fast/mode"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_13",
+            "id": "CHK_SEM_DEDUPE_SESSION_BOUNDARY",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_13",
-                "expected_code": "E_SEM_INTEGRITY_RULE_FAILED",
-                "expected_blame_pointer": "/validation"
+                "expected_code": "E_SEM_DEDUPE_SESSION_BOUNDARY_MISSING",
+                "expected_blame_pointer": "/outputs/dataset/fields/0"
               }
             }
           }
@@ -532,9 +568,9 @@ This normative document defines the machine-checkable contract for `semantics_in
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_INTEGRITY_RULE_FAILED",
+            "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/validation"
+              "/chains/main/steps/0/from"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_01"
@@ -548,9 +584,9 @@ This normative document defines the machine-checkable contract for `semantics_in
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_INTEGRITY_RULE_FAILED",
+            "code": "E_SEM_STALE_WORKER_DATA",
             "blame_pointers": [
-              "/validation"
+              "/execution/sentinel/ready_value"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_02"
@@ -564,9 +600,9 @@ This normative document defines the machine-checkable contract for `semantics_in
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_INTEGRITY_RULE_FAILED",
+            "code": "E_SEM_READINESS_CONTRACT_MISSING",
             "blame_pointers": [
-              "/validation"
+              "/execution"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_03"
@@ -580,9 +616,9 @@ This normative document defines the machine-checkable contract for `semantics_in
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_INTEGRITY_RULE_FAILED",
+            "code": "E_SEM_GATE_REFERENCE_MISSING",
             "blame_pointers": [
-              "/validation"
+              "/gates/missing_gate"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_04"
@@ -596,9 +632,9 @@ This normative document defines the machine-checkable contract for `semantics_in
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_INTEGRITY_RULE_FAILED",
+            "code": "E_SEM_PERMUTE_BIND_MODE_DRIFT",
             "blame_pointers": [
-              "/validation"
+              "/studies/ema_fast/mode"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_05"
@@ -612,9 +648,9 @@ This normative document defines the machine-checkable contract for `semantics_in
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_INTEGRITY_RULE_FAILED",
+            "code": "E_SEM_PERMUTE_POLICY_DISABLED",
             "blame_pointers": [
-              "/validation"
+              "/parameters/permute/0"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_06"
@@ -628,9 +664,9 @@ This normative document defines the machine-checkable contract for `semantics_in
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_INTEGRITY_RULE_FAILED",
+            "code": "E_SEM_DEDUPE_SESSION_BOUNDARY_MISSING",
             "blame_pointers": [
-              "/validation"
+              "/outputs/dataset/fields/0"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_07"
@@ -644,9 +680,9 @@ This normative document defines the machine-checkable contract for `semantics_in
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_INTEGRITY_RULE_FAILED",
+            "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/validation"
+              "/chains/main/steps/0/from"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_08"
@@ -660,9 +696,9 @@ This normative document defines the machine-checkable contract for `semantics_in
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_INTEGRITY_RULE_FAILED",
+            "code": "E_SEM_GATE_REFERENCE_MISSING",
             "blame_pointers": [
-              "/validation"
+              "/gates/ghost_gate"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_09"
@@ -676,9 +712,9 @@ This normative document defines the machine-checkable contract for `semantics_in
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_INTEGRITY_RULE_FAILED",
+            "code": "E_SEM_STALE_WORKER_DATA",
             "blame_pointers": [
-              "/validation"
+              "/execution/sentinel/ready_value"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_10"
@@ -692,9 +728,9 @@ This normative document defines the machine-checkable contract for `semantics_in
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_INTEGRITY_RULE_FAILED",
+            "code": "E_SEM_READINESS_CONTRACT_MISSING",
             "blame_pointers": [
-              "/validation"
+              "/execution"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_11"
@@ -708,9 +744,9 @@ This normative document defines the machine-checkable contract for `semantics_in
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_INTEGRITY_RULE_FAILED",
+            "code": "E_SEM_PERMUTE_BIND_MODE_DRIFT",
             "blame_pointers": [
-              "/validation"
+              "/studies/ema_fast/mode"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_12"
@@ -724,9 +760,9 @@ This normative document defines the machine-checkable contract for `semantics_in
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_INTEGRITY_RULE_FAILED",
+            "code": "E_SEM_DEDUPE_SESSION_BOUNDARY_MISSING",
             "blame_pointers": [
-              "/validation"
+              "/outputs/dataset/fields/0"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_13"
@@ -753,8 +789,8 @@ This normative document defines the machine-checkable contract for `semantics_in
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:bd4754df554e8116069a36d57bce59352f25c3e555066df8f6f67fa0bbbe6219",
-    "contract_sha256": "sha256:bd4754df554e8116069a36d57bce59352f25c3e555066df8f6f67fa0bbbe6219"
+    "doc_sha256": "sha256:78d4c0c4f26fe5afbff748eb5287936868ce70ef4204efb60f272224fa2c3a04",
+    "contract_sha256": "sha256:56a7efcd36a7d00364632810848453f47cd06b794c63480eef142b645763ae9e"
   }
 }
 ```

@@ -62,10 +62,13 @@
   },
   "meta": {
     "fixture_id": "L8_governance_evolution_invalid_01",
+    "engine_capabilities_required": [
+      "cap:sre:nonexistent:v1"
+    ],
     "expected_error": "E_LAYER_GOVERNANCE_INVALID",
-    "invalid_pointer": "/dag"
+    "invalid_pointer": "/meta/engine_capabilities_required/0"
   },
   "compat": {
-    "invalid_case": true
+    "invalid_case": false
   }
 }

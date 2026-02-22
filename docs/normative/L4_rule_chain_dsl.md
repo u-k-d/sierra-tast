@@ -266,7 +266,7 @@ This normative document defines the machine-checkable contract for `rule_chain_d
         "kind": "diagnostics",
         "checks": [
           {
-            "id": "CHK_DIAG_INVALID_01",
+            "id": "CHK_CHAINS_OBJECT",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
@@ -278,26 +278,26 @@ This normative document defines the machine-checkable contract for `rule_chain_d
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_02",
+            "id": "CHK_CHAIN_TYPED_REF",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_02",
                 "expected_code": "E_LAYER_CHAIN_DSL_INVALID",
-                "expected_blame_pointer": "/chains"
+                "expected_blame_pointer": "/chains/main/steps/0/from"
               }
             }
           },
           {
-            "id": "CHK_DIAG_INVALID_03",
+            "id": "CHK_CHAIN_GATE_EXISTS",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_03",
                 "expected_code": "E_LAYER_CHAIN_DSL_INVALID",
-                "expected_blame_pointer": "/chains"
+                "expected_blame_pointer": "/gates/missing_gate"
               }
             }
           },
@@ -502,7 +502,7 @@ This normative document defines the machine-checkable contract for `rule_chain_d
           {
             "code": "E_LAYER_CHAIN_DSL_INVALID",
             "blame_pointers": [
-              "/chains"
+              "/chains/main/steps/0/from"
             ],
             "dag_node_ids": [
               "rule_chain_dsl_node_02"
@@ -518,7 +518,7 @@ This normative document defines the machine-checkable contract for `rule_chain_d
           {
             "code": "E_LAYER_CHAIN_DSL_INVALID",
             "blame_pointers": [
-              "/chains"
+              "/gates/missing_gate"
             ],
             "dag_node_ids": [
               "rule_chain_dsl_node_03"
@@ -657,8 +657,8 @@ This normative document defines the machine-checkable contract for `rule_chain_d
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:bcc7d3726cfb383e1d79af906d5bfde06e8f1412429d9abde813f9a90f43fddb",
-    "contract_sha256": "sha256:bcc7d3726cfb383e1d79af906d5bfde06e8f1412429d9abde813f9a90f43fddb"
+    "doc_sha256": "sha256:4b86075fad597bd346713d95b09d0c9efcb229ee6c649c8591142022b71cfcff",
+    "contract_sha256": "sha256:9bd0ccc9e71cb508cbb54e63707e609a02516d30c76b49774325e24d1bc72883"
   }
 }
 ```

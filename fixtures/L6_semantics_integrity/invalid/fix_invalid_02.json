@@ -24,6 +24,12 @@
     "backend": {
       "type": "sierra_chart",
       "sierra_chart": {}
+    },
+    "sentinel": {
+      "enabled": true,
+      "study_id": 1,
+      "subgraph": 0,
+      "ready_value": 1.0
     }
   },
   "studies": {
@@ -62,10 +68,10 @@
   },
   "meta": {
     "fixture_id": "L6_semantics_integrity_invalid_02",
-    "expected_error": "E_SEM_INTEGRITY_RULE_FAILED",
-    "invalid_pointer": "/validation"
+    "expected_error": "E_SEM_STALE_WORKER_DATA",
+    "invalid_pointer": "/execution/sentinel/ready_value"
   },
   "compat": {
-    "invalid_case": true
+    "invalid_case": false
   }
 }

@@ -12,14 +12,14 @@
       "fixture_id": "FIX_INVALID_02",
       "code": "E_LAYER_CORE_IDENTITY_INVALID",
       "blame_pointers": [
-        "/version"
+        "/plan_kind"
       ]
     },
     {
       "fixture_id": "FIX_INVALID_03",
       "code": "E_LAYER_CORE_IDENTITY_INVALID",
       "blame_pointers": [
-        "/version"
+        "/plan_io/format"
       ]
     },
     {
