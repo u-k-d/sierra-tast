@@ -1,5 +1,6 @@
 param(
-  [string]$Compiler = "clang++"
+  [string]$Compiler = "clang++",
+  [switch]$EnableAcsil = $true
 )
 
 $ErrorActionPreference = "Stop"
@@ -24,13 +25,16 @@ $sources = @(
 $common = @(
   "-std=c++20",
   "-fsyntax-only",
-  "-DSRE_ENABLE_ACSIL=1",
   "-I.",
   "-Iinclude",
   "-Igenerated",
   "-Igenerated/contracts",
   "-IACS_Source"
 )
+
+if ($EnableAcsil) {
+  $common += "-DSRE_ENABLE_ACSIL=1"
+}
 
 foreach ($src in $sources) {
   Write-Host "AST check: $src"

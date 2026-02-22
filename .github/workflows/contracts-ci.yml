@@ -18,3 +18,38 @@ jobs:
         run: python tools/contractgen.py
       - name: Ensure no drift after generation
         run: git diff --exit-code
+
+  runtime-checks:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-clang
+      - name: Build runtime (non-ACSIL CI mode)
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File tools/build_sre.ps1 -Compiler g++ -Config release -EnableAcsil:$false
+      - name: Validate contracts
+        run: python tools/validate_contracts.py
+      - name: Runtime fixture checks
+        run: python tools/run_fixture_runtime_checks.py
+      - name: Semantic tripwire checks
+        run: python tools/run_semantic_tripwire_checks.py
+      - name: Permute policy checks
+        run: python tools/run_permute_policy_checks.py
+      - name: Governance/output checks
+        run: python tools/run_governance_output_checks.py
+      - name: Rule-chain checks
+        run: python tools/run_rule_chain_checks.py
+      - name: Artifact emission checks
+        run: python tools/run_artifact_emission_checks.py
+      - name: clang++ AST checks (non-ACSIL CI mode)
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File tools/clang_ast_check.ps1 -Compiler clang++ -EnableAcsil:$false
