@@ -964,10 +964,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "enabled",
-        "mode",
-        "indicator_dag",
-        "event_emitter"
+        "enabled"
       ],
       "properties": {
         "enabled": {
@@ -976,7 +973,8 @@
         },
         "mode": {
           "enum": [
-            "authoritative_events"
+            "authoritative_events",
+            "indicator_dag"
           ],
           "default": "authoritative_events"
         },
@@ -993,28 +991,68 @@
           "default": true
         },
         "align": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "mode": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "last_completed",
+                    "strict_close"
+                  ],
+                  "default": "last_completed"
+                }
+              },
+              "default": {
+                "mode": "last_completed"
+              }
+            },
+            {
+              "type": "string",
               "enum": [
                 "last_completed",
-                "strict_close"
-              ],
-              "default": "last_completed"
+                "last_completed_bar",
+                "strict_close",
+                "strict_close_bar"
+              ]
             }
-          },
-          "default": {
-            "mode": "last_completed"
-          }
+          ]
         },
         "indicator_dag": {
           "$ref": "#/$defs/Layer2Dag"
         },
         "event_emitter": {
           "$ref": "#/$defs/Layer2EventEmitter"
+        },
+        "symbol_failure_policy": {
+          "type": "string",
+          "enum": [
+            "fail_fast",
+            "skip_symbol"
+          ],
+          "default": "fail_fast",
+          "description": "Layer2 per-symbol failure handling. fail_fast preserves legacy behavior. skip_symbol continues with accessible symbols while downgrading symbol-local errors to warnings."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "mode",
+              "indicator_dag",
+              "event_emitter"
+            ]
+          }
+        }
+      ]
     },
     "BucketRule": {
       "type": "object",
@@ -1093,27 +1131,42 @@
           "$ref": "#/$defs/QuantileList"
         },
         "distribution": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "scope": {
+          "description": "Bucketing sample-distribution hint. Current runtime accepts this field but computes cutpoints from event sample deterministically.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "scope": {
+                  "enum": [
+                    "event_sample",
+                    "all_bars",
+                    "rolling_time",
+                    "per_symbol"
+                  ],
+                  "default": "event_sample"
+                },
+                "window_days": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "min_samples": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            {
+              "type": "string",
               "enum": [
+                "global",
                 "event_sample",
                 "all_bars",
                 "rolling_time",
                 "per_symbol"
-              ],
-              "default": "event_sample"
-            },
-            "window_days": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "min_samples": {
-              "type": "integer",
-              "minimum": 1
+              ]
             }
-          }
+          ]
         }
       }
     },
@@ -1121,11 +1174,19 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "enabled",
-        "entry_price_field",
-        "horizon",
-        "price_fields",
-        "cost_model"
+        "enabled"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "horizon"
+          ]
+        },
+        {
+          "required": [
+            "horizons_bars"
+          ]
+        }
       ],
       "properties": {
         "enabled": {
@@ -1270,10 +1331,7 @@
       "additionalProperties": false,
       "required": [
         "enabled",
-        "mode",
-        "inputs",
-        "eligibility",
-        "artifacts"
+        "mode"
       ],
       "properties": {
         "enabled": {
@@ -1423,6 +1481,11 @@
                 "$ref": "#/$defs/Layer3BucketingDimension"
               },
               "minItems": 1
+            },
+            "emit_limits": {
+              "type": "boolean",
+              "default": true,
+              "description": "Whether to emit <field>_lo/<field>_hi and <field>_min/<field>_max. Current runtime always emits limits."
             }
           }
         },
@@ -1435,10 +1498,6 @@
         "artifacts": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "rr_buckets",
-            "decision_audit"
-          ],
           "properties": {
             "rr_buckets": {
               "type": "string"
@@ -1451,6 +1510,102 @@
             },
             "bucket_stats": {
               "type": "string"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "enabled": {
+                "const": true
+              },
+              "mode": {
+                "const": "rr_menu"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "inputs",
+              "eligibility",
+              "artifacts",
+              "rr_menu"
+            ],
+            "properties": {
+              "eligibility": {
+                "properties": {
+                  "rules": {
+                    "items": {
+                      "properties": {
+                        "op": {
+                          "enum": [
+                            ">",
+                            ">=",
+                            "not_null"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "rr_menu": {
+                "required": [
+                  "risk_quantiles",
+                  "reward_quantiles"
+                ],
+                "properties": {
+                  "row_rules": {
+                    "items": {
+                      "properties": {
+                        "op": {
+                          "enum": [
+                            ">",
+                            ">=",
+                            "not_null"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "artifacts": {
+                "required": [
+                  "rr_buckets",
+                  "decision_audit"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "enabled": {
+                "const": true
+              },
+              "mode": {
+                "const": "bucket_eval"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "inputs",
+              "eligibility",
+              "artifacts",
+              "outcomes",
+              "bucketing"
+            ],
+            "properties": {
+              "bucketing": {
+                "required": [
+                  "dimensions"
+                ]
+              }
             }
           }
         }

@@ -208,6 +208,30 @@
         ],
         "emit_column_bindings": "Each emit column must bind by ref or node."
       },
+      "align_compat": {
+        "pointer": "/execution/layer2/align",
+        "accepted_forms": [
+          {
+            "mode": "last_completed|strict_close"
+          },
+          "last_completed",
+          "last_completed_bar",
+          "strict_close",
+          "strict_close_bar"
+        ]
+      },
+      "symbol_failure_policy": {
+        "pointer": "/execution/layer2/symbol_failure_policy",
+        "values": [
+          "fail_fast",
+          "skip_symbol"
+        ],
+        "default": "fail_fast",
+        "notes": [
+          "fail_fast keeps historical behavior.",
+          "skip_symbol allows processing accessible symbols while skipping symbol-local failures."
+        ]
+      },
       "date_range_enforcement": {
         "rule": "Layer2 authoritative emission must respect universe.date_range when enabled.",
         "failure_diagnostic": "E_L2_DATE_RANGE_VIOLATION / CHK_DATE_RANGE_ENFORCED_IN_L2"
@@ -223,6 +247,10 @@
         "rr_menu",
         "bucket_eval"
       ],
+      "conditional_requirements": [
+        "When enabled=true and mode=rr_menu: inputs, eligibility, artifacts, rr_menu are required; rr_menu.risk_quantiles and rr_menu.reward_quantiles are required; artifacts.rr_buckets and artifacts.decision_audit are required.",
+        "When enabled=true and mode=bucket_eval: inputs, eligibility, artifacts, outcomes, and bucketing(dimensions) are required."
+      ],
       "rr_menu_mode": {
         "purpose": "Legacy risk/reward bucket menu artifacts",
         "compatibility": "Kept for backward compatibility when mode is absent or rr_menu."
@@ -236,7 +264,7 @@
           "bucketing dimension fields"
         ],
         "outcomes": {
-          "horizon": "horizon.value (single) or horizons_bars[] (multi)",
+          "horizon": "horizon.value (single) or horizons_bars[] (multi); at least one is required",
           "sides": [
             "long",
             "short"
@@ -244,6 +272,10 @@
           "no_same_bar_overlap": "Outcomes use bars t+1..t+H only.",
           "failure_diagnostic": "E_L3_OUTCOME_LEAKAGE_SAME_BAR"
         },
+        "bucketing_options": [
+          "distribution (object or string alias including global)",
+          "emit_limits (bool)"
+        ],
         "metrics": [
           "n_trades",
           "EV",

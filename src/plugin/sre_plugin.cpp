@@ -1385,6 +1385,44 @@ bool Layer2Enabled(const sre::JsonValue& plan) {
   return JsonBoolAt(plan, "/execution/layer2/enabled", true);
 }
 
+std::string Layer2SymbolFailurePolicy(const sre::JsonValue& plan) {
+  std::string policy = JsonStringAt(plan, "/execution/layer2/symbol_failure_policy", "fail_fast");
+  if (policy != "fail_fast" && policy != "skip_symbol") {
+    policy = "fail_fast";
+  }
+  return policy;
+}
+
+void RelayDiagnostics(
+    const sre::layers::DiagnosticSink& from,
+    sre::layers::DiagnosticSink& into,
+    bool downgrade_errors,
+    std::string_view symbol) {
+  for (const auto& item : from.Items()) {
+    auto d = item;
+    if (!symbol.empty()) {
+      if (d.actual.empty()) {
+        d.actual = "symbol=" + std::string(symbol);
+      } else if (d.actual.find("symbol=") == std::string::npos) {
+        d.actual += ", symbol=" + std::string(symbol);
+      }
+    }
+    if (downgrade_errors && d.severity == "error") {
+      d.severity = "warning";
+    }
+    into.Emit(d);
+  }
+}
+
+std::string FirstErrorReason(const sre::layers::DiagnosticSink& sink) {
+  for (const auto& d : sink.Items()) {
+    if (d.severity == "error") {
+      return d.reason;
+    }
+  }
+  return std::string();
+}
+
 Layer2EvaluationResult EvaluateLayer2(
     SCStudyInterfaceRef sc,
     const sre::JsonValue& plan,
@@ -1454,10 +1492,31 @@ Layer2EvaluationResult EvaluateLayer2(
                                            : 0.0)));
   const bool require_final_bar = JsonBoolAt(plan, "/execution/layer2/require_final_bar", true);
   const PlanDateRange date_range = ParsePlanDateRange(plan);
+  const bool skip_symbol_failures = Layer2SymbolFailurePolicy(plan) == "skip_symbol";
+  const bool strict_symbol_resolution =
+      JsonBoolAt(plan, "/execution/backend/sierra_chart/layout_contract/readiness/symbol_resolution_strict", false);
 
   for (const auto& symbol : symbols) {
+    sre::layers::DiagnosticSink symbol_sink;
     SymbolSnapshot snapshot;
-    if (!LoadSymbolSnapshot(sc, plan, symbol, snapshot, sink)) {
+    if (!LoadSymbolSnapshot(sc, plan, symbol, snapshot, symbol_sink)) {
+      const bool downgrade = skip_symbol_failures && !strict_symbol_resolution;
+      RelayDiagnostics(symbol_sink, sink, downgrade, symbol);
+      if (symbol_sink.HasErrors() && !downgrade) {
+        result.ok = false;
+        break;
+      }
+      if (symbol_sink.HasErrors() && downgrade) {
+        EmitRuntimeWarning(
+            sink,
+            "E_RUN_SYMBOL_SKIPPED",
+            "CHK_RUNTIME_SYMBOL_SKIPPED",
+            "Symbol failed Layer2 snapshot resolution and was skipped due symbol_failure_policy=skip_symbol.",
+            "symbol available for Layer2 evaluation",
+            symbol,
+            "/execution/layer2/symbol_failure_policy",
+            "Set symbol_failure_policy=fail_fast to stop on first symbol failure.");
+      }
       continue;
     }
     const int row_count = std::min(snapshot.base_data[SC_LAST].GetArraySize(), snapshot.date_times.GetArraySize());
@@ -1508,11 +1567,10 @@ Layer2EvaluationResult EvaluateLayer2(
             plan,
             snapshot,
             ref,
-            sink,
+            symbol_sink,
             "/execution/layer2/indicator_dag/nodes/" + node_id + "/ref");
         if (raw.empty()) {
           symbol_ok = false;
-          result.ok = false;
           break;
         }
         int lag = 0;
@@ -1540,7 +1598,7 @@ Layer2EvaluationResult EvaluateLayer2(
             auto dep_it = node_values.find(dep.AsString());
             if (dep_it == node_values.end()) {
               EmitRuntimeError(
-                  sink,
+                  symbol_sink,
                   "E_L2_MISSING_NODE_DEP",
                   "CHK_L2_NODE_DEP",
                   "Layer2 dependency was unavailable during evaluation.",
@@ -1549,7 +1607,6 @@ Layer2EvaluationResult EvaluateLayer2(
                   "/execution/layer2/indicator_dag/nodes/" + node_id + "/inputs/" + std::to_string(i),
                   "Ensure dependencies are valid and acyclic.");
               symbol_ok = false;
-              result.ok = false;
               break;
             }
             inputs.push_back(dep_it->second);
@@ -1597,7 +1654,21 @@ Layer2EvaluationResult EvaluateLayer2(
     }
 
     if (!symbol_ok) {
-      continue;
+      RelayDiagnostics(symbol_sink, sink, skip_symbol_failures, symbol);
+      if (skip_symbol_failures) {
+        EmitRuntimeWarning(
+            sink,
+            "E_RUN_SYMBOL_SKIPPED",
+            "CHK_RUNTIME_SYMBOL_SKIPPED",
+            "Symbol failed Layer2 node evaluation and was skipped due symbol_failure_policy=skip_symbol.",
+            "symbol evaluated without runtime errors",
+            symbol + (FirstErrorReason(symbol_sink).empty() ? "" : ", reason=" + FirstErrorReason(symbol_sink)),
+            "/execution/layer2/symbol_failure_policy",
+            "Set symbol_failure_policy=fail_fast to stop on first symbol failure.");
+        continue;
+      }
+      result.ok = false;
+      break;
     }
 
     std::vector<Layer2EventRow> events;
@@ -1635,7 +1706,7 @@ Layer2EvaluationResult EvaluateLayer2(
           const std::string node_ref = JsonStringAt(col, "/node", "");
           if (ref.empty() && node_ref.empty()) {
             EmitRuntimeError(
-                sink,
+                symbol_sink,
                 "E_L2_MISSING_NODE_DEP",
                 "CHK_L2_EMIT_COLUMN_BINDING",
                 "Layer2 emit column must declare either ref or node.",
@@ -1643,7 +1714,6 @@ Layer2EvaluationResult EvaluateLayer2(
                 "missing",
                 "/execution/layer2/event_emitter/emit_columns/" + std::to_string(c),
                 "Set ref or node for the emit column.");
-            result.ok = false;
             symbol_ok = false;
             break;
           }
@@ -1660,7 +1730,7 @@ Layer2EvaluationResult EvaluateLayer2(
             } else if (ref.rfind("@study.", 0) == 0) {
               DatasetFieldSpec temp{name, ref};
               std::string resolved;
-              if (ResolveDatasetFieldValue(sc, plan, temp, snapshot, i, resolved, sink)) {
+              if (ResolveDatasetFieldValue(sc, plan, temp, snapshot, i, resolved, symbol_sink)) {
                 raw = std::move(resolved);
               }
             }
@@ -1670,7 +1740,7 @@ Layer2EvaluationResult EvaluateLayer2(
             auto node_it = node_values.find(node_ref);
             if (node_it == node_values.end() || i >= static_cast<int>(node_it->second.size())) {
               EmitRuntimeError(
-                  sink,
+                  symbol_sink,
                   "E_L2_MISSING_NODE_DEP",
                   "CHK_L2_EMIT_NODE",
                   "Layer2 emit column references a missing node.",
@@ -1678,7 +1748,6 @@ Layer2EvaluationResult EvaluateLayer2(
                   node_ref,
                   "/execution/layer2/event_emitter/emit_columns/" + std::to_string(c) + "/node",
                   "Reference an existing indicator_dag node.");
-              result.ok = false;
               symbol_ok = false;
               break;
             }
@@ -1695,9 +1764,24 @@ Layer2EvaluationResult EvaluateLayer2(
       prev_trigger = trigger;
     }
     if (!symbol_ok) {
-      continue;
+      RelayDiagnostics(symbol_sink, sink, skip_symbol_failures, symbol);
+      if (skip_symbol_failures) {
+        EmitRuntimeWarning(
+            sink,
+            "E_RUN_SYMBOL_SKIPPED",
+            "CHK_RUNTIME_SYMBOL_SKIPPED",
+            "Symbol failed Layer2 evaluation and was skipped due symbol_failure_policy=skip_symbol.",
+            "symbol evaluated without runtime errors",
+            symbol + (FirstErrorReason(symbol_sink).empty() ? "" : ", reason=" + FirstErrorReason(symbol_sink)),
+            "/execution/layer2/symbol_failure_policy",
+            "Set symbol_failure_policy=fail_fast to stop on first symbol failure.");
+        continue;
+      }
+      result.ok = false;
+      break;
     }
 
+    RelayDiagnostics(symbol_sink, sink, false, symbol);
     result.accessible_symbols.push_back(symbol);
     result.snapshots_by_symbol[symbol] = snapshot;
     result.events_by_symbol[symbol] = std::move(events);

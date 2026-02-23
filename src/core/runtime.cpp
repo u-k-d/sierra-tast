@@ -2048,6 +2048,44 @@ Layer2RuntimeConfig ParseLayer2RuntimeConfig(const JsonValue& plan) {
   return cfg;
 }
 
+std::string Layer2SymbolFailurePolicy(const JsonValue& plan) {
+  std::string policy = JsonStringAt(plan, "/execution/layer2/symbol_failure_policy", "fail_fast");
+  if (policy != "fail_fast" && policy != "skip_symbol") {
+    policy = "fail_fast";
+  }
+  return policy;
+}
+
+void RelayLayer2SymbolDiagnostics(
+    const sre::layers::DiagnosticSink& from,
+    sre::layers::DiagnosticSink& into,
+    bool downgrade_errors,
+    std::string_view symbol) {
+  for (const auto& item : from.Items()) {
+    auto d = item;
+    if (!symbol.empty()) {
+      if (d.actual.empty()) {
+        d.actual = "symbol=" + std::string(symbol);
+      } else if (d.actual.find("symbol=") == std::string::npos) {
+        d.actual += ", symbol=" + std::string(symbol);
+      }
+    }
+    if (downgrade_errors && d.severity == "error") {
+      d.severity = "warning";
+    }
+    into.Emit(d);
+  }
+}
+
+std::string FirstLayer2ErrorReason(const sre::layers::DiagnosticSink& sink) {
+  for (const auto& d : sink.Items()) {
+    if (d.severity == "error") {
+      return d.reason;
+    }
+  }
+  return std::string();
+}
+
 Layer2EvaluationResult EvaluateLayer2(const JsonValue& plan, const std::vector<std::string>& symbols, sre::layers::DiagnosticSink& sink) {
   Layer2EvaluationResult result;
   const Layer2RuntimeConfig layer2_cfg = ParseLayer2RuntimeConfig(plan);
@@ -2100,6 +2138,7 @@ Layer2EvaluationResult EvaluateLayer2(const JsonValue& plan, const std::vector<s
     cooldown = std::max(0, static_cast<int>(std::llround(cooldown_v->AsNumber())));
   }
   const PlanDateRange date_range = ParsePlanDateRange(plan);
+  const bool skip_symbol_failures = Layer2SymbolFailurePolicy(plan) == "skip_symbol";
   const auto* emit_columns = sre::ResolvePointer(plan, "/execution/layer2/event_emitter/emit_columns");
   if (!emit_columns || !emit_columns->IsArray() || emit_columns->AsArray().items.empty()) {
     EmitRuntimeFeatureError(
@@ -2116,6 +2155,7 @@ Layer2EvaluationResult EvaluateLayer2(const JsonValue& plan, const std::vector<s
   }
 
   for (const auto& symbol : symbols) {
+    sre::layers::DiagnosticSink symbol_sink;
     auto bars = BuildSyntheticBars(symbol);
     std::unordered_map<std::string, std::vector<L2Value>> node_values;
     bool symbol_ok = true;
@@ -2168,7 +2208,7 @@ Layer2EvaluationResult EvaluateLayer2(const JsonValue& plan, const std::vector<s
         if (lag_v && lag_v->IsNumber()) {
           lag = std::max(0, static_cast<int>(std::llround(lag_v->AsNumber())));
         }
-        auto raw = BuildStudyRefSeries(plan, ref, bars, sink, "/execution/layer2/indicator_dag/nodes/" + node_id + "/ref");
+        auto raw = BuildStudyRefSeries(plan, ref, bars, symbol_sink, "/execution/layer2/indicator_dag/nodes/" + node_id + "/ref");
         if (raw.empty()) {
           symbol_ok = false;
           break;
@@ -2191,7 +2231,7 @@ Layer2EvaluationResult EvaluateLayer2(const JsonValue& plan, const std::vector<s
             auto dep_it = node_values.find(dep.AsString());
             if (dep_it == node_values.end()) {
               EmitRuntimeFeatureError(
-                  sink,
+                  symbol_sink,
                   "E_L2_MISSING_NODE_DEP",
                   "CHK_L2_NODE_DEP",
                   "Layer2 dependency was unavailable during evaluation.",
@@ -2216,6 +2256,19 @@ Layer2EvaluationResult EvaluateLayer2(const JsonValue& plan, const std::vector<s
     }
 
     if (!symbol_ok) {
+      RelayLayer2SymbolDiagnostics(symbol_sink, sink, skip_symbol_failures, symbol);
+      if (skip_symbol_failures) {
+        EmitRuntimeFeatureWarning(
+            sink,
+            "E_RUN_SYMBOL_SKIPPED",
+            "CHK_RUNTIME_SYMBOL_SKIPPED",
+            "Symbol failed Layer2 evaluation and was skipped due symbol_failure_policy=skip_symbol.",
+            "symbol evaluated without runtime errors",
+            symbol + (FirstLayer2ErrorReason(symbol_sink).empty() ? "" : ", reason=" + FirstLayer2ErrorReason(symbol_sink)),
+            {"/execution/layer2/symbol_failure_policy"},
+            "Set symbol_failure_policy=fail_fast to stop on first symbol failure.");
+        continue;
+      }
       result.ok = false;
       break;
     }
@@ -2275,7 +2328,7 @@ Layer2EvaluationResult EvaluateLayer2(const JsonValue& plan, const std::vector<s
             auto it = node_values.find(node_v->AsString());
             if (it == node_values.end() || i >= it->second.size()) {
               EmitRuntimeFeatureError(
-                  sink,
+                  symbol_sink,
                   "E_L2_MISSING_NODE_DEP",
                   "CHK_L2_EMIT_NODE",
                   "event_emitter column node reference is missing.",
@@ -2300,10 +2353,24 @@ Layer2EvaluationResult EvaluateLayer2(const JsonValue& plan, const std::vector<s
       prev_trigger = trigger;
     }
     if (!symbol_ok) {
+      RelayLayer2SymbolDiagnostics(symbol_sink, sink, skip_symbol_failures, symbol);
+      if (skip_symbol_failures) {
+        EmitRuntimeFeatureWarning(
+            sink,
+            "E_RUN_SYMBOL_SKIPPED",
+            "CHK_RUNTIME_SYMBOL_SKIPPED",
+            "Symbol failed Layer2 event emission and was skipped due symbol_failure_policy=skip_symbol.",
+            "symbol emitted event rows without runtime errors",
+            symbol + (FirstLayer2ErrorReason(symbol_sink).empty() ? "" : ", reason=" + FirstLayer2ErrorReason(symbol_sink)),
+            {"/execution/layer2/symbol_failure_policy"},
+            "Set symbol_failure_policy=fail_fast to stop on first symbol failure.");
+        continue;
+      }
       result.ok = false;
       break;
     }
 
+    RelayLayer2SymbolDiagnostics(symbol_sink, sink, false, symbol);
     result.bars_by_symbol[symbol] = std::move(bars);
     result.events_by_symbol[symbol] = std::move(events);
   }
