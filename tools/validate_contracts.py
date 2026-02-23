@@ -20,6 +20,7 @@ try:
 except Exception:
     jsonschema = None
 
+
 def extract_doc_contract(doc_path: Path):
     text = doc_path.read_text(encoding="utf-8")
     m = re.search(r"```json\n(.*?)\n```", text, re.DOTALL)

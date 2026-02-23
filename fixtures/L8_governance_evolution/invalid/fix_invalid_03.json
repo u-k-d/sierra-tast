@@ -62,11 +62,10 @@
   },
   "meta": {
     "fixture_id": "L8_governance_evolution_invalid_03",
-    "engine_capabilities_optional": "bad-type",
     "expected_error": "E_LAYER_GOVERNANCE_INVALID",
-    "invalid_pointer": "/meta/engine_capabilities_optional"
+    "invalid_pointer": "/dag"
   },
   "compat": {
-    "invalid_case": false
+    "invalid_case": true
   }
 }

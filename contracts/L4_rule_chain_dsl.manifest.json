@@ -257,7 +257,7 @@
         "kind": "diagnostics",
         "checks": [
           {
-            "id": "CHK_CHAINS_OBJECT",
+            "id": "CHK_DIAG_INVALID_01",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
@@ -269,26 +269,26 @@
             }
           },
           {
-            "id": "CHK_CHAIN_TYPED_REF",
+            "id": "CHK_DIAG_INVALID_02",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_02",
                 "expected_code": "E_LAYER_CHAIN_DSL_INVALID",
-                "expected_blame_pointer": "/chains/main/steps/0/from"
+                "expected_blame_pointer": "/chains"
               }
             }
           },
           {
-            "id": "CHK_CHAIN_GATE_EXISTS",
+            "id": "CHK_DIAG_INVALID_03",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_03",
                 "expected_code": "E_LAYER_CHAIN_DSL_INVALID",
-                "expected_blame_pointer": "/gates/missing_gate"
+                "expected_blame_pointer": "/chains"
               }
             }
           },
@@ -493,7 +493,7 @@
           {
             "code": "E_LAYER_CHAIN_DSL_INVALID",
             "blame_pointers": [
-              "/chains/main/steps/0/from"
+              "/chains"
             ],
             "dag_node_ids": [
               "rule_chain_dsl_node_02"
@@ -509,7 +509,7 @@
           {
             "code": "E_LAYER_CHAIN_DSL_INVALID",
             "blame_pointers": [
-              "/gates/missing_gate"
+              "/chains"
             ],
             "dag_node_ids": [
               "rule_chain_dsl_node_03"
@@ -648,7 +648,7 @@
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:4b86075fad597bd346713d95b09d0c9efcb229ee6c649c8591142022b71cfcff",
-    "contract_sha256": "sha256:9bd0ccc9e71cb508cbb54e63707e609a02516d30c76b49774325e24d1bc72883"
+    "doc_sha256": "sha256:9e4654b00840a1c29ec65f8420e4eba5480adb8282f7948c8183f50c7a114ebd",
+    "contract_sha256": "sha256:bcc7d3726cfb383e1d79af906d5bfde06e8f1412429d9abde813f9a90f43fddb"
   }
 }

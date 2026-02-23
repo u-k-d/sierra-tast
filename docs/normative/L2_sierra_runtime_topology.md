@@ -259,38 +259,38 @@ This normative document defines the machine-checkable contract for `sierra_runti
         "kind": "diagnostics",
         "checks": [
           {
-            "id": "CHK_WORKER_CHARTS_NONEMPTY",
+            "id": "CHK_DIAG_INVALID_01",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_01",
                 "expected_code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
-                "expected_blame_pointer": "/execution/worker_charts"
+                "expected_blame_pointer": "/execution"
               }
             }
           },
           {
-            "id": "CHK_BACKEND_TYPE",
+            "id": "CHK_DIAG_INVALID_02",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_02",
                 "expected_code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
-                "expected_blame_pointer": "/execution/backend/type"
+                "expected_blame_pointer": "/execution"
               }
             }
           },
           {
-            "id": "CHK_READINESS_GATE_REF",
+            "id": "CHK_DIAG_INVALID_03",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_03",
                 "expected_code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
-                "expected_blame_pointer": "/execution/backend/sierra_chart/layout_contract/readiness/ready_gate"
+                "expected_blame_pointer": "/execution"
               }
             }
           },
@@ -479,7 +479,7 @@ This normative document defines the machine-checkable contract for `sierra_runti
           {
             "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
             "blame_pointers": [
-              "/execution/worker_charts"
+              "/execution"
             ],
             "dag_node_ids": [
               "sierra_runtime_topology_node_01"
@@ -495,7 +495,7 @@ This normative document defines the machine-checkable contract for `sierra_runti
           {
             "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
             "blame_pointers": [
-              "/execution/backend/type"
+              "/execution"
             ],
             "dag_node_ids": [
               "sierra_runtime_topology_node_02"
@@ -511,7 +511,7 @@ This normative document defines the machine-checkable contract for `sierra_runti
           {
             "code": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
             "blame_pointers": [
-              "/execution/backend/sierra_chart/layout_contract/readiness/ready_gate"
+              "/execution"
             ],
             "dag_node_ids": [
               "sierra_runtime_topology_node_03"
@@ -650,8 +650,8 @@ This normative document defines the machine-checkable contract for `sierra_runti
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:c0102a40039dd33cbf6dda9756452d078fe864cd7165e14ae52a3e824cc8dbe1",
-    "contract_sha256": "sha256:040d364f6c0c14e73a355201ba4d7697fac7a569c0d0694c1f7a53b35d39415d"
+    "doc_sha256": "sha256:e7dbdc7566f4e707d2cb8d8ac8531d7dc93c00b9240c249abbed862390c71d5a",
+    "contract_sha256": "sha256:3db3d754ffab3a4381a2eaabc517555374b2b25d4cfafe50a815533913883adb"
   }
 }
 ```

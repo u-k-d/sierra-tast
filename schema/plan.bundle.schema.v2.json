@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/sierra-research-engine/plan.bundle.schema.v2.json",
+  "title": "Sierra Research Engine Plan Bundle Schema v2 (Additive)",
+  "$ref": "./plan.bundle.schema.json"
+}

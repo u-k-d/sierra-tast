@@ -63,26 +63,9 @@
   "meta": {
     "fixture_id": "L5_experimentation_permute_invalid_03",
     "expected_error": "E_LAYER_PERMUTE_INVALID",
-    "invalid_pointer": "/parameters/permute/0/kind"
-  },
-  "validation": {
-    "sierra_study_input_permute_policy": "disabled"
-  },
-  "parameters": {
-    "permute": [
-      {
-        "id": "p_len",
-        "kind": "study_input",
-        "study": "ema_fast",
-        "input": "length",
-        "values": [
-          8,
-          13
-        ]
-      }
-    ]
+    "invalid_pointer": "/parameters"
   },
   "compat": {
-    "invalid_case": false
+    "invalid_case": true
   }
 }

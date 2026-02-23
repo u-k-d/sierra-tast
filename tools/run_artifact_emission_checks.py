@@ -1,4 +1,5 @@
 import json
+import csv
 import subprocess
 import tempfile
 from pathlib import Path
@@ -54,6 +55,14 @@ def csv_row_count(path: Path) -> int:
     if len(lines) <= 1:
         return 0
     return len(lines) - 1
+
+
+def read_csv_rows(path: Path) -> tuple[list[str], list[dict[str, str]]]:
+    if not path.exists():
+        return [], []
+    with path.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        return list(reader.fieldnames or []), list(reader)
 
 
 def main() -> int:
@@ -157,6 +166,8 @@ def main() -> int:
             ("l2_invalid_cycle.json", "E_L2_DAG_CYCLE"),
             ("l2_invalid_missing_dep.json", "E_L2_MISSING_NODE_DEP"),
             ("l2_invalid_unknown_kind.json", "E_L2_UNKNOWN_NODE_KIND"),
+            ("l2_invalid_dataset_ref_scope_mismatch.json", "E_DATASET_REF_SCOPE_MISMATCH"),
+            ("l2_invalid_event_column_missing.json", "E_EVENT_EMITTER_MISSING_COLUMN"),
         ]:
             plan = load_fixture_template(L2_FIX / fixture_name, tmp)
             rc, jsonl, _ = run_plan(plan, tmp, fixture_name.replace(".json", ""))
@@ -180,6 +191,23 @@ def main() -> int:
         if rows_true <= rows_edge:
             failures.append(f"on_true should emit more rows than on_true_edge, got on_true={rows_true}, edge={rows_edge}")
 
+        # Layer2 date range enforcement.
+        l2_date = load_fixture_template(L2_FIX / "l2_date_range_enforced.json", tmp)
+        rc, _, _ = run_plan(l2_date, tmp, "l2_date_range_enforced")
+        if rc != 0:
+            failures.append("l2_date_range_enforced should pass")
+        for symbol in ["ES", "NQ"]:
+            out_csv = tmp / "l2_date" / symbol / "authoritative.csv"
+            if csv_row_count(out_csv) != 0:
+                failures.append(f"l2_date_range_enforced should emit zero rows for {symbol}")
+
+        l2_date_invalid = load_fixture_template(L2_FIX / "l2_invalid_date_range_leakage.json", tmp)
+        rc, jsonl, _ = run_plan(l2_date_invalid, tmp, "l2_invalid_date_range_leakage")
+        if rc == 0:
+            failures.append("l2_invalid_date_range_leakage should fail")
+        if not has_code(read_jsonl(jsonl), "E_L2_DATE_RANGE_VIOLATION"):
+            failures.append("l2_invalid_date_range_leakage should emit E_L2_DATE_RANGE_VIOLATION")
+
         # Layer3 valid outcomes + bucketing + EV.
         l3_valid = load_fixture_template(L3_FIX / "l3_valid_outcomes_bucketing.json", tmp)
         rc, _, _ = run_plan(l3_valid, tmp, "l3_valid_outcomes_bucketing")
@@ -188,10 +216,79 @@ def main() -> int:
         for symbol in ["ES", "NQ"]:
             out_events = tmp / "layer3" / symbol / "outcomes_per_event.csv"
             out_buckets = tmp / "layer3" / symbol / "bucket_stats.csv"
+            out_audit = tmp / "layer3" / symbol / "decision_audit.csv"
             if csv_row_count(out_events) <= 0:
                 failures.append(f"layer3 outcomes_per_event missing rows for {symbol}")
             if csv_row_count(out_buckets) <= 0:
                 failures.append(f"layer3 bucket_stats missing rows for {symbol}")
+            if csv_row_count(out_audit) <= 0:
+                failures.append(f"layer3 decision_audit missing rows for {symbol}")
+
+            event_headers, event_rows = read_csv_rows(out_events)
+            required_event_cols = {"horizon_bars", "side", "mfe_pct", "mfa_pct", "ret_pct", "net_ret_pct"}
+            if not required_event_cols.issubset(set(event_headers)):
+                failures.append(f"outcomes_per_event missing expected columns for {symbol}")
+            horizons = {r.get("horizon_bars", "") for r in event_rows}
+            if horizons != {"5", "10", "15", "20"}:
+                failures.append(f"outcomes_per_event should include horizons 5/10/15/20 for {symbol}, got {sorted(horizons)}")
+            sides = {r.get("side", "") for r in event_rows}
+            if sides != {"long", "short"}:
+                failures.append(f"outcomes_per_event should include long+short for {symbol}, got {sorted(sides)}")
+
+            pairs: dict[tuple[str, str, str], dict[str, dict[str, str]]] = {}
+            for row in event_rows:
+                key = (row.get("event_index", ""), row.get("event_bar_index", ""), row.get("horizon_bars", ""))
+                pairs.setdefault(key, {})[row.get("side", "")] = row
+            checked_pair = False
+            for pair_rows in pairs.values():
+                if "long" not in pair_rows or "short" not in pair_rows:
+                    continue
+                try:
+                    l_ret = float(pair_rows["long"]["ret_pct"])
+                    s_ret = float(pair_rows["short"]["ret_pct"])
+                    l_mfe = float(pair_rows["long"]["mfe_pct"])
+                    s_mfa = float(pair_rows["short"]["mfa_pct"])
+                    l_mfa = float(pair_rows["long"]["mfa_pct"])
+                    s_mfe = float(pair_rows["short"]["mfe_pct"])
+                except Exception:
+                    continue
+                checked_pair = True
+                if abs(l_ret + s_ret) > 1e-9:
+                    failures.append(f"long/short ret symmetry failed for {symbol}")
+                    break
+                if abs(l_mfe + s_mfa) > 1e-9:
+                    failures.append(f"long/short mfe/mfa symmetry failed for {symbol}")
+                    break
+                if abs(l_mfa + s_mfe) > 1e-9:
+                    failures.append(f"long/short mfa/mfe symmetry failed for {symbol}")
+                    break
+            if not checked_pair:
+                failures.append(f"no comparable long/short event pairs for {symbol}")
+
+            bucket_headers, bucket_rows = read_csv_rows(out_buckets)
+            required_bucket_cols = {
+                "horizon_bars",
+                "side",
+                "rvol_min",
+                "rvol_max",
+                "rvol_lo",
+                "rvol_hi",
+                "n_trades",
+                "EV",
+            }
+            if not required_bucket_cols.issubset(set(bucket_headers)):
+                failures.append(f"bucket_stats missing expected columns for {symbol}")
+            bucket_horizons = {r.get("horizon_bars", "") for r in bucket_rows}
+            if "5" not in bucket_horizons or "20" not in bucket_horizons:
+                failures.append(f"bucket_stats horizon coverage is incomplete for {symbol}")
+            bucket_sides = {r.get("side", "") for r in bucket_rows}
+            if bucket_sides != {"long", "short"}:
+                failures.append(f"bucket_stats should include long+short for {symbol}, got {sorted(bucket_sides)}")
+
+            audit_headers, _ = read_csv_rows(out_audit)
+            required_audit_cols = {"context_id", "horizon_bars", "side", "rule_id", "result"}
+            if not required_audit_cols.issubset(set(audit_headers)):
+                failures.append(f"decision_audit missing side/horizon context columns for {symbol}")
 
         # Layer3 same-bar leakage rejection.
         l3_invalid = load_fixture_template(L3_FIX / "l3_invalid_same_bar_leakage.json", tmp)

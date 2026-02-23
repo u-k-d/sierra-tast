@@ -2,13 +2,18 @@
   "version": 262,
   "plan_kind": "sierra_research_engine.plan",
   "plan_io": {
-    "format": "json"
+    "format": "json",
+    "encoding": "utf-8"
   },
   "universe": {
     "source": "inline",
     "symbols": [
       "ES"
-    ]
+    ],
+    "date_range": {
+      "start": "2025-01-01",
+      "end": "2025-01-31"
+    }
   },
   "execution": {
     "worker_charts": [
@@ -30,18 +35,27 @@
             "kind": "param",
             "type": "bool",
             "value": true
+          },
+          "bad_dt": {
+            "kind": "param",
+            "type": "string",
+            "value": "1999-01-01 00:00:00"
           }
         }
       },
       "event_emitter": {
         "trigger_node": "always_true",
-        "emit_mode": "on_true",
-        "cooldown_bars": 1,
+        "emit_mode": "on_true_edge",
         "emit_columns": [
           {
             "name": "entry_price",
             "type": "float",
             "ref": "@bar.close"
+          },
+          {
+            "name": "bar_datetime",
+            "type": "datetime",
+            "node": "bad_dt"
           }
         ]
       }
@@ -72,7 +86,7 @@
   "outputs": {
     "dataset": {
       "format": "csv",
-      "path": "__TMP__/layer3_invalid/{symbol}/authoritative.csv",
+      "path": "__TMP__/l2_invalid/date_range_leak.csv",
       "source": "layer2_event_emitter",
       "fields": [
         {
@@ -80,60 +94,14 @@
           "ref": "@event.symbol"
         },
         {
-          "name": "bar_index",
-          "ref": "@event.bar_index"
+          "name": "bar_datetime",
+          "ref": "@event.bar_datetime"
         },
         {
           "name": "entry_price",
           "ref": "@event.entry_price"
         }
       ]
-    },
-    "layer3": {
-      "enabled": true,
-      "mode": "bucket_eval",
-      "inputs": {
-        "layer2_authoritative_csv": "__TMP__/layer3_invalid/{symbol}/authoritative.csv"
-      },
-      "eligibility": {},
-      "bucketing": {
-        "dimensions": [
-          {
-            "field": "entry_price",
-            "method": "quantile",
-            "q": [
-              0.5
-            ]
-          }
-        ]
-      },
-      "outcomes": {
-        "enabled": true,
-        "entry_price_field": "entry_price",
-        "horizon": {
-          "type": "bars",
-          "value": 3
-        },
-        "price_fields": {
-          "high": "high",
-          "low": "low",
-          "close": "close"
-        },
-        "compute": {
-          "mfe": {
-            "kind": "max_high_same_bar"
-          }
-        },
-        "cost_model": {
-          "type": "none"
-        }
-      },
-      "artifacts": {
-        "rr_buckets": "__TMP__/layer3_invalid/{symbol}/rr_unused.csv",
-        "decision_audit": "__TMP__/layer3_invalid/{symbol}/audit_unused.csv",
-        "outcomes_per_event": "__TMP__/layer3_invalid/{symbol}/outcomes_per_event.csv",
-        "bucket_stats": "__TMP__/layer3_invalid/{symbol}/bucket_stats.csv"
-      }
     },
     "artifacts": {
       "enabled": true,
@@ -143,6 +111,6 @@
     }
   },
   "meta": {
-    "fixture_id": "augmentation_l3_invalid_same_bar"
+    "fixture_id": "augmentation_l2_invalid_date_range_leakage"
   }
 }

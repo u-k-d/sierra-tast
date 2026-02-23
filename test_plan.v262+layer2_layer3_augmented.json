@@ -395,6 +395,11 @@
                         "ready_gate": {
                           "type": "string",
                           "pattern": "^@gate\\.[a-z][a-z0-9_]{0,63}$"
+                        },
+                        "symbol_resolution_strict": {
+                          "type": "boolean",
+                          "default": false,
+                          "description": "When true, unresolved universe symbol->chart mappings are treated as errors instead of warnings."
                         }
                       },
                       "allOf": [
@@ -1129,6 +1134,27 @@
         },
         "entry_price_field": {
           "$ref": "#/$defs/NonEmptyString"
+        },
+        "horizons_bars": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "minItems": 1
+        },
+        "sides": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "long",
+              "short"
+            ]
+          },
+          "minItems": 1,
+          "default": [
+            "long"
+          ]
         },
         "horizon": {
           "type": "object",

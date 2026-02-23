@@ -1114,6 +1114,35 @@ bool ParseIntStrict(std::string_view text, int& out) {
   }
 }
 
+struct PlanDateRange {
+  bool enabled = false;
+  std::string start_date;
+  std::string end_date;
+};
+
+PlanDateRange ParsePlanDateRange(const JsonValue& plan) {
+  PlanDateRange out;
+  const std::string start = JsonStringAt(plan, "/universe/date_range/start", "");
+  const std::string end = JsonStringAt(plan, "/universe/date_range/end", "");
+  if (start.size() == 10 && end.size() == 10) {
+    out.enabled = true;
+    out.start_date = start;
+    out.end_date = end;
+  }
+  return out;
+}
+
+bool DateInRange(std::string_view date_time_text, const PlanDateRange& range) {
+  if (!range.enabled) {
+    return true;
+  }
+  if (date_time_text.size() < 10) {
+    return false;
+  }
+  const std::string date(date_time_text.substr(0, 10));
+  return date >= range.start_date && date <= range.end_date;
+}
+
 std::string JsonTypeName(const JsonValue* value) { return value ? value->TypeName() : "missing"; }
 
 void EmitRuntimeFeatureError(
@@ -1139,6 +1168,30 @@ void EmitRuntimeFeatureError(
       "runtime");
 }
 
+void EmitRuntimeFeatureWarning(
+    sre::layers::DiagnosticSink& sink,
+    std::string code,
+    std::string check_id,
+    std::string reason,
+    std::string expected,
+    std::string actual,
+    std::vector<std::string> blame_pointers,
+    std::string remediation) {
+  sre::layers::Diagnostic d;
+  d.code = std::move(code);
+  d.layer_id = "outputs_repro";
+  d.check_id = std::move(check_id);
+  d.group_id = "CHKGRP_PLAN_AST_SHAPE";
+  d.reason = std::move(reason);
+  d.expected = std::move(expected);
+  d.actual = std::move(actual);
+  d.blame_pointers = std::move(blame_pointers);
+  d.remediation = std::move(remediation);
+  d.severity = "warning";
+  d.source = "runtime";
+  sink.Emit(d);
+}
+
 bool IsImplementedDatasetRuntimeRefForBars(std::string_view source_ref) {
   if (source_ref.empty()) {
     return true;
@@ -1162,11 +1215,11 @@ bool Layer3AugmentationRequested(const JsonValue& plan) {
 
 bool AppendArtifactEmissionNotImplementedDiagnostics(const JsonValue& plan, sre::layers::DiagnosticSink& sink) {
   bool ok = true;
-  auto emit = [&](std::string check_id, std::string reason, std::string actual, std::string pointer) {
+  auto emit = [&](std::string code, std::string check_id, std::string reason, std::string actual, std::string pointer) {
     sre::layers::EmitLayerError(
         sink,
         "outputs_repro",
-        "E_NOT_IMPLEMENTED",
+        std::move(code),
         std::move(check_id),
         "CHKGRP_PLAN_AST_SHAPE",
         std::move(reason),
@@ -1179,8 +1232,108 @@ bool AppendArtifactEmissionNotImplementedDiagnostics(const JsonValue& plan, sre:
   };
 
   const std::string dataset_source = DatasetSourceFromPlan(plan);
-  if (dataset_source == "bars") {
-    const auto* field_array = sre::ResolvePointer(plan, "/outputs/dataset/fields");
+  const auto* field_array = sre::ResolvePointer(plan, "/outputs/dataset/fields");
+  if (dataset_source == "layer2_event_emitter") {
+    std::set<std::string> emitted_columns = {"symbol", "bar_index"};
+    const auto* emit_cols = sre::ResolvePointer(plan, "/execution/layer2/event_emitter/emit_columns");
+    if (emit_cols && emit_cols->IsArray()) {
+      for (const auto& c : emit_cols->AsArray().items) {
+        if (!c.IsObject()) {
+          continue;
+        }
+        const auto* name_v = ObjectGet(c, "name");
+        if (name_v && name_v->IsString() && !name_v->AsString().empty()) {
+          emitted_columns.insert(name_v->AsString());
+        }
+      }
+    }
+
+    std::set<std::string> missing_event_columns;
+    if (field_array && field_array->IsArray()) {
+      for (size_t i = 0; i < field_array->AsArray().items.size(); ++i) {
+        const auto& field = field_array->AsArray().items[i];
+        if (!field.IsObject()) {
+          continue;
+        }
+        const std::string field_name = JsonStringAt(field, "/name", "field_" + std::to_string(i));
+        const auto* ref = ObjectGet(field, "ref");
+        const auto* from = ObjectGet(field, "from");
+        const auto check_source = [&](const JsonValue* value, std::string_view key_name) {
+          if (!value || !value->IsString()) {
+            return;
+          }
+          const std::string src = value->AsString();
+          if (src.empty() || src[0] != '@') {
+            return;
+          }
+          if (src.rfind("@event.", 0) != 0) {
+            sre::layers::EmitLayerError(
+                sink,
+                "outputs_repro",
+                "E_DATASET_REF_SCOPE_MISMATCH",
+                "CHK_DATASET_REF_SCOPE_MISMATCH",
+                "CHKGRP_PLAN_AST_SHAPE",
+                "Dataset field ref namespace does not match outputs.dataset.source=layer2_event_emitter.",
+                "ref namespace=@event.*",
+                "dataset_source=" + dataset_source + ", field=" + field_name + ", actual_ref=" + src,
+                {"/outputs/dataset/source", "/outputs/dataset/fields/" + std::to_string(i) + "/" + std::string(key_name)},
+                "Use @event.<column> and emit the column via execution.layer2.event_emitter.emit_columns",
+                "runtime");
+            ok = false;
+            return;
+          }
+          const std::string col = src.substr(7);
+          if (col.empty() || !emitted_columns.contains(col)) {
+            missing_event_columns.insert(col);
+            sre::layers::EmitLayerError(
+                sink,
+                "outputs_repro",
+                "E_EVENT_EMITTER_MISSING_COLUMN",
+                "CHK_EVENT_EMITTER_COVERS_DATASET_FIELDS",
+                "CHKGRP_PLAN_AST_SHAPE",
+                "Dataset @event column is not produced by execution.layer2.event_emitter.emit_columns.",
+                "dataset @event.<col> covered by emitted columns",
+                "field=" + field_name + ", missing_event_col=" + col,
+                {"/execution/layer2/event_emitter/emit_columns", "/outputs/dataset/fields/" + std::to_string(i)},
+                "Add missing columns to execution.layer2.event_emitter.emit_columns or remove them from dataset.fields",
+                "runtime");
+            ok = false;
+          }
+        };
+        check_source(ref, "ref");
+        check_source(from, "from");
+      }
+    }
+    if (!missing_event_columns.empty()) {
+      std::ostringstream emitted;
+      bool first = true;
+      for (const auto& c : emitted_columns) {
+        if (!first) emitted << ",";
+        first = false;
+        emitted << c;
+      }
+      std::ostringstream missing;
+      first = true;
+      for (const auto& c : missing_event_columns) {
+        if (!first) missing << ",";
+        first = false;
+        missing << c;
+      }
+      sre::layers::EmitLayerError(
+          sink,
+          "outputs_repro",
+          "E_EVENT_EMITTER_MISSING_COLUMN",
+          "CHK_EVENT_EMITTER_COVERS_DATASET_FIELDS",
+          "CHKGRP_PLAN_AST_SHAPE",
+          "One or more dataset @event columns are not emitted.",
+          "all dataset @event columns emitted",
+          "missing_event_columns=[" + missing.str() + "], emitted_columns=[" + emitted.str() + "]",
+          {"/execution/layer2/event_emitter/emit_columns", "/outputs/dataset/fields"},
+          "Add missing columns to execution.layer2.event_emitter.emit_columns or remove them from dataset.fields",
+          "runtime");
+      ok = false;
+    }
+  } else if (dataset_source == "bars") {
     if (field_array && field_array->IsArray()) {
       for (size_t i = 0; i < field_array->AsArray().items.size(); ++i) {
         const auto& field = field_array->AsArray().items[i];
@@ -1191,6 +1344,7 @@ bool AppendArtifactEmissionNotImplementedDiagnostics(const JsonValue& plan, sre:
         const auto* from = ObjectGet(field, "from");
         if (ref && ref->IsString() && !IsImplementedDatasetRuntimeRefForBars(ref->AsString())) {
           emit(
+              "E_NOT_IMPLEMENTED",
               "CHK_RUNTIME_DATASET_REF_NOT_IMPLEMENTED",
               "Dataset field reference is declared but runtime execution is not implemented for bars source.",
               ref->AsString(),
@@ -1198,6 +1352,7 @@ bool AppendArtifactEmissionNotImplementedDiagnostics(const JsonValue& plan, sre:
         }
         if (from && from->IsString() && !IsImplementedDatasetRuntimeRefForBars(from->AsString())) {
           emit(
+              "E_NOT_IMPLEMENTED",
               "CHK_RUNTIME_DATASET_REF_NOT_IMPLEMENTED",
               "Dataset field source is declared but runtime execution is not implemented for bars source.",
               from->AsString(),
@@ -1207,10 +1362,38 @@ bool AppendArtifactEmissionNotImplementedDiagnostics(const JsonValue& plan, sre:
     }
   } else if (dataset_source != "layer2_event_emitter") {
     emit(
+        "E_NOT_IMPLEMENTED",
         "CHK_RUNTIME_DATASET_SOURCE_NOT_IMPLEMENTED",
         "Dataset source is unknown to runtime.",
         dataset_source,
         "/outputs/dataset/source");
+  }
+
+  const bool symbol_resolution_strict = JsonBoolAt(
+      plan, "/execution/backend/sierra_chart/layout_contract/readiness/symbol_resolution_strict", false);
+  const auto* symbols_v = sre::ResolvePointer(plan, "/universe/symbols");
+  const auto* workers_v = sre::ResolvePointer(plan, "/execution/worker_charts");
+  const bool has_symbols = symbols_v && symbols_v->IsArray() && !symbols_v->AsArray().items.empty();
+  const bool has_workers = workers_v && workers_v->IsArray() && !workers_v->AsArray().items.empty();
+  if (has_symbols && !has_workers) {
+    if (symbol_resolution_strict) {
+      emit(
+          "E_RUN_SYMBOL_CHART_NOT_FOUND_STRICT",
+          "CHK_SYMBOL_CHART_RESOLUTION_STRICT",
+          "Strict symbol resolution is enabled but execution.worker_charts is empty, so symbol->chart resolution is not deterministic.",
+          "strict=true, resolved_chart=null, expected_worker_charts=[]",
+          "/execution/worker_charts");
+    } else {
+      EmitRuntimeFeatureWarning(
+          sink,
+          "E_RUN_SYMBOL_CHART_NOT_FOUND",
+          "CHK_SYMBOL_CHART_RESOLUTION_STRICT",
+          "symbol_resolution_strict=false and worker chart mapping is absent; symbol resolution may be non-deterministic.",
+          "deterministic symbol->chart mapping",
+          "strict=false, expected_worker_charts=[]",
+          {"/universe/symbols", "/execution/worker_charts"},
+          "Set readiness.symbol_resolution_strict=true to fail fast, or configure worker charts deterministically.");
+    }
   }
 
   const auto* layer3 = sre::ResolvePointer(plan, "/outputs/layer3");
@@ -1219,6 +1402,7 @@ bool AppendArtifactEmissionNotImplementedDiagnostics(const JsonValue& plan, sre:
     const bool layer3_enabled = (enabled == nullptr) || !enabled->IsBool() || enabled->AsBool();
     if (layer3_enabled && !Layer3AugmentationRequested(plan)) {
       emit(
+          "E_NOT_IMPLEMENTED",
           "CHK_RUNTIME_LAYER3_OUTPUT_NOT_IMPLEMENTED",
           "Layer3 output artifact emission is declared but not implemented in runtime.",
           "outputs.layer3.enabled=true",
@@ -1915,6 +2099,7 @@ Layer2EvaluationResult EvaluateLayer2(const JsonValue& plan, const std::vector<s
   if (cooldown_v && cooldown_v->IsNumber()) {
     cooldown = std::max(0, static_cast<int>(std::llround(cooldown_v->AsNumber())));
   }
+  const PlanDateRange date_range = ParsePlanDateRange(plan);
   const auto* emit_columns = sre::ResolvePointer(plan, "/execution/layer2/event_emitter/emit_columns");
   if (!emit_columns || !emit_columns->IsArray() || emit_columns->AsArray().items.empty()) {
     EmitRuntimeFeatureError(
@@ -2046,6 +2231,10 @@ Layer2EvaluationResult EvaluateLayer2(const JsonValue& plan, const std::vector<s
     }
     for (size_t i = 0; i < evaluable_bars; ++i) {
       const bool trigger = L2ToBool(node_values[trigger_node][i]);
+      if (!DateInRange(bars[i].datetime, date_range)) {
+        prev_trigger = trigger;
+        continue;
+      }
       bool fire = emit_mode == "on_true" ? trigger : (trigger && !prev_trigger);
       if (fire && cooldown > 0 && static_cast<int>(i) - last_emit <= cooldown) {
         fire = false;
@@ -2272,6 +2461,50 @@ bool EmitLayer2EventDataset(
     headers.push_back(field.name);
   }
 
+  const PlanDateRange date_range = ParsePlanDateRange(plan);
+  const bool enforce_l2_date_range = JsonBoolAt(plan, "/execution/layer2/enabled", false) && date_range.enabled;
+  std::string emitted_min_dt = "9999-99-99";
+  std::string emitted_max_dt = "0000-00-00";
+  const auto observe_dt = [&](std::string_view dt) {
+    if (dt.size() < 10) {
+      return;
+    }
+    const std::string d(dt.substr(0, 10));
+    emitted_min_dt = std::min(emitted_min_dt, d);
+    emitted_max_dt = std::max(emitted_max_dt, d);
+  };
+  const auto event_dt = [&](const Layer2EventRow& event, const std::vector<SyntheticBar>& bars) {
+    auto it = event.columns.find("bar_datetime");
+    if (it != event.columns.end() && !it->second.empty()) {
+      return it->second;
+    }
+    if (event.bar_index >= 0 && static_cast<size_t>(event.bar_index) < bars.size()) {
+      return bars[static_cast<size_t>(event.bar_index)].datetime;
+    }
+    return std::string();
+  };
+  const auto enforce_event_dt = [&](const Layer2EventRow& event, const std::vector<SyntheticBar>& bars) -> bool {
+    if (!enforce_l2_date_range) {
+      return true;
+    }
+    const std::string dt = event_dt(event, bars);
+    observe_dt(dt);
+    if (DateInRange(dt, date_range)) {
+      return true;
+    }
+    EmitRuntimeFeatureError(
+        sink,
+        "E_L2_DATE_RANGE_VIOLATION",
+        "CHK_DATE_RANGE_ENFORCED_IN_L2",
+        "L2 authoritative emission produced a row outside universe.date_range.",
+        "rows constrained to date_range.start..date_range.end",
+        "date_range.start=" + date_range.start_date + ", date_range.end=" + date_range.end_date + ", emitted_min_dt=" + emitted_min_dt +
+            ", emitted_max_dt=" + emitted_max_dt + ", violating_dt=" + dt,
+        "/universe/date_range",
+        "Fix L2 emitter to filter bars by universe.date_range");
+    return false;
+  };
+
   const bool per_symbol = PathTemplateUsesSymbol(raw_path);
   if (per_symbol) {
     for (const auto& symbol : symbols) {
@@ -2281,6 +2514,9 @@ bool EmitLayer2EventDataset(
       const auto bars_it = layer2.bars_by_symbol.find(symbol);
       if (events_it != layer2.events_by_symbol.end() && bars_it != layer2.bars_by_symbol.end()) {
         for (const auto& event : events_it->second) {
+          if (!enforce_event_dt(event, bars_it->second)) {
+            return false;
+          }
           std::vector<std::string> row;
           row.reserve(fields.size());
           for (const auto& field : fields) {
@@ -2306,6 +2542,9 @@ bool EmitLayer2EventDataset(
       continue;
     }
     for (const auto& event : events_it->second) {
+      if (!enforce_event_dt(event, bars_it->second)) {
+        return false;
+      }
       std::vector<std::string> row;
       row.reserve(fields.size());
       for (const auto& field : fields) {
@@ -2351,7 +2590,19 @@ bool ComputeLayer3Augmentation(
   }
   const auto* enabled = ObjectGet(*layer3, "enabled");
   const bool layer3_enabled = (enabled == nullptr) || !enabled->IsBool() || enabled->AsBool();
-  if (!layer3_enabled || !Layer3AugmentationRequested(plan)) {
+  if (!layer3_enabled) {
+    return true;
+  }
+
+  const std::string mode = JsonStringAt(plan, "/outputs/layer3/mode", "rr_menu");
+  if (mode != "bucket_eval") {
+    return true;
+  }
+  if (!JsonBoolAt(plan, "/outputs/layer3/outcomes/enabled", false)) {
+    return true;
+  }
+  const auto* dims_enabled_v = sre::ResolvePointer(plan, "/outputs/layer3/bucketing/dimensions");
+  if (!dims_enabled_v || !dims_enabled_v->IsArray() || dims_enabled_v->AsArray().items.empty()) {
     return true;
   }
 
@@ -2392,11 +2643,51 @@ bool ComputeLayer3Augmentation(
     return false;
   }
 
-  int horizon = 1;
-  const auto* horizon_v = sre::ResolvePointer(plan, "/outputs/layer3/outcomes/horizon/value");
-  if (horizon_v && horizon_v->IsNumber()) {
-    horizon = std::max(1, static_cast<int>(std::llround(horizon_v->AsNumber())));
+  std::vector<int> horizons;
+  bool emit_horizon_column = false;
+  const auto* horizons_v = sre::ResolvePointer(plan, "/outputs/layer3/outcomes/horizons_bars");
+  if (horizons_v && horizons_v->IsArray() && !horizons_v->AsArray().items.empty()) {
+    emit_horizon_column = true;
+    for (const auto& item : horizons_v->AsArray().items) {
+      if (!item.IsNumber()) {
+        continue;
+      }
+      const int h = static_cast<int>(std::llround(item.AsNumber()));
+      if (h > 0) {
+        horizons.push_back(h);
+      }
+    }
+    std::sort(horizons.begin(), horizons.end());
+    horizons.erase(std::unique(horizons.begin(), horizons.end()), horizons.end());
   }
+  if (horizons.empty()) {
+    int horizon = 1;
+    const auto* horizon_v = sre::ResolvePointer(plan, "/outputs/layer3/outcomes/horizon/value");
+    if (horizon_v && horizon_v->IsNumber()) {
+      horizon = std::max(1, static_cast<int>(std::llround(horizon_v->AsNumber())));
+    }
+    horizons.push_back(horizon);
+  }
+
+  std::vector<std::string> sides = {"long"};
+  bool emit_side_column = false;
+  const auto* sides_v = sre::ResolvePointer(plan, "/outputs/layer3/outcomes/sides");
+  if (sides_v && sides_v->IsArray() && !sides_v->AsArray().items.empty()) {
+    std::vector<std::string> parsed;
+    for (const auto& item : sides_v->AsArray().items) {
+      if (!item.IsString()) {
+        continue;
+      }
+      const std::string side = item.AsString();
+      if ((side == "long" || side == "short") && std::find(parsed.begin(), parsed.end(), side) == parsed.end()) {
+        parsed.push_back(side);
+      }
+    }
+    if (!parsed.empty()) {
+      sides = std::move(parsed);
+    }
+  }
+  emit_side_column = sides.size() > 1;
   const std::string entry_field = JsonStringAt(plan, "/outputs/layer3/outcomes/entry_price_field", "close");
   const std::string high_field = JsonStringAt(plan, "/outputs/layer3/outcomes/price_fields/high", "high");
   const std::string low_field = JsonStringAt(plan, "/outputs/layer3/outcomes/price_fields/low", "low");
@@ -2409,12 +2700,17 @@ bool ComputeLayer3Augmentation(
     std::string symbol;
     int event_index = 0;
     int event_bar_index = 0;
+    int horizon_bars = 0;
+    std::string side = "long";
     double entry_price = 0.0;
-    double mfe = 0.0;
-    double mfa = 0.0;
-    double ret = 0.0;
-    double ret_net = 0.0;
+    double mfe_pct = 0.0;
+    double mfa_pct = 0.0;
+    double ret_pct = 0.0;
+    double net_ret_pct = 0.0;
     std::unordered_map<std::string, double> numeric_fields;
+    std::unordered_map<std::string, int> dim_bucket;
+    std::unordered_map<std::string, double> dim_lo;
+    std::unordered_map<std::string, double> dim_hi;
     std::string bucket_key = "all";
   };
 
@@ -2424,16 +2720,7 @@ bool ComputeLayer3Augmentation(
     std::vector<std::string> headers;
     std::vector<std::vector<std::string>> rows;
     if (!ReadCsvFile(input_path, headers, rows)) {
-      EmitRuntimeFeatureError(
-          sink,
-          "E_IO_OUTPUT_CONFIG_INVALID",
-          "CHK_L3_INPUT_CSV",
-          "Layer3 augmentation input CSV is missing.",
-          "existing readable CSV",
-          input_path.string(),
-          "/outputs/layer3/inputs/layer2_authoritative_csv",
-          "Ensure layer2 authoritative dataset exists before running layer3 augmentation.");
-      return false;
+      continue;
     }
 
     std::unordered_map<std::string, size_t> idx;
@@ -2468,66 +2755,83 @@ bool ComputeLayer3Augmentation(
         ParseIntStrict(row[bar_idx_it->second], bar_index);
       }
       bar_index = std::max(0, std::min(static_cast<int>(bars.size()) - 1, bar_index));
-      const int start = bar_index + 1;
-      const int end = std::min(static_cast<int>(bars.size()) - 1, bar_index + horizon);
-      if (start <= bar_index) {
-        EmitRuntimeFeatureError(
-            sink,
-            "E_L3_OUTCOME_LEAKAGE_SAME_BAR",
-            "CHK_L3_OUTCOME_LEAKAGE",
-            "Layer3 outcomes window included same-bar index t.",
-            "start index > t",
-            std::to_string(start),
-            "/outputs/layer3/outcomes/horizon",
-            "Ensure horizon evaluation starts at t+1.");
-        return false;
-      }
-      if (start > end) {
-        continue;
-      }
 
       double entry = 0.0;
       if (entry_it->second < row.size()) {
         ParseDoubleStrict(row[entry_it->second], entry);
       }
       if (std::fabs(entry) < 1e-12) {
-        entry = bars[static_cast<size_t>(bar_index)].close;
+        continue;
       }
 
-      double max_high = -std::numeric_limits<double>::infinity();
-      double min_low = std::numeric_limits<double>::infinity();
-      for (int i = start; i <= end; ++i) {
-        max_high = std::max(max_high, BarFieldAsNumber(bars[static_cast<size_t>(i)], high_field));
-        min_low = std::min(min_low, BarFieldAsNumber(bars[static_cast<size_t>(i)], low_field));
-      }
-      const double close_h = BarFieldAsNumber(bars[static_cast<size_t>(end)], close_field);
-      const double mfe = max_high - entry;
-      const double mfa = entry - min_low;
-      const double ret = close_h - entry;
-      const double cost = cost_type == "fixed_bps" ? (entry * bps / 10000.0) : 0.0;
-      const double ret_net = ret - cost;
+      for (int horizon : horizons) {
+        const int start = bar_index + 1;
+        const int end = std::min(static_cast<int>(bars.size()) - 1, bar_index + horizon);
+        if (start <= bar_index) {
+          EmitRuntimeFeatureError(
+              sink,
+              "E_L3_OUTCOME_LEAKAGE_SAME_BAR",
+              "CHK_L3_OUTCOME_LEAKAGE",
+              "Layer3 outcomes window included same-bar index t.",
+              "start index > t",
+              std::to_string(start),
+              "/outputs/layer3/outcomes/horizon",
+              "Ensure horizon evaluation starts at t+1.");
+          return false;
+        }
+        if (start > end) {
+          continue;
+        }
 
-      OutcomeRow out;
-      out.symbol = symbol;
-      out.event_index = static_cast<int>(r);
-      out.event_bar_index = bar_index;
-      out.entry_price = entry;
-      out.mfe = mfe;
-      out.mfa = mfa;
-      out.ret = ret;
-      out.ret_net = ret_net;
-      out.numeric_fields["entry_price"] = entry;
-      out.numeric_fields["mfe"] = mfe;
-      out.numeric_fields["mfa"] = mfa;
-      out.numeric_fields["ret"] = ret;
-      out.numeric_fields["ret_net"] = ret_net;
-      for (size_t i = 0; i < headers.size() && i < row.size(); ++i) {
-        double parsed = 0.0;
-        if (ParseDoubleStrict(row[i], parsed)) {
-          out.numeric_fields[headers[i]] = parsed;
+        double max_high = -std::numeric_limits<double>::infinity();
+        double min_low = std::numeric_limits<double>::infinity();
+        for (int i = start; i <= end; ++i) {
+          max_high = std::max(max_high, BarFieldAsNumber(bars[static_cast<size_t>(i)], high_field));
+          min_low = std::min(min_low, BarFieldAsNumber(bars[static_cast<size_t>(i)], low_field));
+        }
+        const double close_h = BarFieldAsNumber(bars[static_cast<size_t>(end)], close_field);
+        const double cost = cost_type == "fixed_bps" ? (bps / 10000.0) : 0.0;
+
+        for (const auto& side : sides) {
+          double mfe_pct = 0.0;
+          double mfa_pct = 0.0;
+          double ret_pct = 0.0;
+          if (side == "short") {
+            mfe_pct = (entry - min_low) / entry;
+            mfa_pct = (entry - max_high) / entry;
+            ret_pct = (entry - close_h) / entry;
+          } else {
+            mfe_pct = (max_high / entry) - 1.0;
+            mfa_pct = (min_low / entry) - 1.0;
+            ret_pct = (close_h / entry) - 1.0;
+          }
+          const double net_ret_pct = ret_pct - cost;
+
+          OutcomeRow out;
+          out.symbol = symbol;
+          out.event_index = static_cast<int>(r);
+          out.event_bar_index = bar_index;
+          out.horizon_bars = horizon;
+          out.side = side;
+          out.entry_price = entry;
+          out.mfe_pct = mfe_pct;
+          out.mfa_pct = mfa_pct;
+          out.ret_pct = ret_pct;
+          out.net_ret_pct = net_ret_pct;
+          out.numeric_fields["entry_price"] = entry;
+          out.numeric_fields["mfe_pct"] = mfe_pct;
+          out.numeric_fields["mfa_pct"] = mfa_pct;
+          out.numeric_fields["ret_pct"] = ret_pct;
+          out.numeric_fields["net_ret_pct"] = net_ret_pct;
+          for (size_t i = 0; i < headers.size() && i < row.size(); ++i) {
+            double parsed = 0.0;
+            if (ParseDoubleStrict(row[i], parsed)) {
+              out.numeric_fields[headers[i]] = parsed;
+            }
+          }
+          outcomes.push_back(std::move(out));
         }
       }
-      outcomes.push_back(std::move(out));
     }
   }
 
@@ -2565,15 +2869,34 @@ bool ComputeLayer3Augmentation(
       std::sort(d.q.begin(), d.q.end());
       d.q.erase(std::unique(d.q.begin(), d.q.end()), d.q.end());
 
-      std::vector<double> values;
-      for (const auto& row : outcomes) {
-        auto it = row.numeric_fields.find(d.field);
-        if (it != row.numeric_fields.end()) {
-          values.push_back(it->second);
+      std::vector<std::pair<double, size_t>> values;
+      values.reserve(outcomes.size());
+      for (size_t i = 0; i < outcomes.size(); ++i) {
+        auto it = outcomes[i].numeric_fields.find(d.field);
+        if (it != outcomes[i].numeric_fields.end()) {
+          values.push_back({it->second, i});
         }
       }
+      std::stable_sort(values.begin(), values.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+      const auto cut_at = [&](double q) {
+        if (values.empty()) {
+          return 0.0;
+        }
+        q = std::max(0.0, std::min(1.0, q));
+        const double pos = q * static_cast<double>(values.size() - 1);
+        const size_t lo = static_cast<size_t>(std::floor(pos));
+        const size_t hi = static_cast<size_t>(std::ceil(pos));
+        if (lo >= values.size()) {
+          return values.back().first;
+        }
+        if (hi >= values.size() || lo == hi) {
+          return values[lo].first;
+        }
+        const double alpha = pos - static_cast<double>(lo);
+        return values[lo].first * (1.0 - alpha) + values[hi].first * alpha;
+      };
       for (double q : d.q) {
-        d.cuts.push_back(QuantileValue(values, q));
+        d.cuts.push_back(cut_at(q));
       }
       dims.push_back(std::move(d));
     }
@@ -2587,14 +2910,22 @@ bool ComputeLayer3Augmentation(
     std::vector<std::string> parts;
     for (const auto& dim : dims) {
       auto it = row.numeric_fields.find(dim.field);
-      if (it == row.numeric_fields.end()) {
-        parts.push_back(dim.field + "=missing");
-        continue;
-      }
       int bucket = 0;
-      while (bucket < static_cast<int>(dim.cuts.size()) && it->second > dim.cuts[static_cast<size_t>(bucket)]) {
-        ++bucket;
+      double lo = std::numeric_limits<double>::quiet_NaN();
+      double hi = std::numeric_limits<double>::quiet_NaN();
+      if (it == row.numeric_fields.end()) {
+        bucket = -1;
+      } else {
+        while (bucket < static_cast<int>(dim.cuts.size()) && it->second > dim.cuts[static_cast<size_t>(bucket)]) {
+          ++bucket;
+        }
+        lo = (bucket <= 0) ? -std::numeric_limits<double>::infinity() : dim.cuts[static_cast<size_t>(bucket - 1)];
+        hi = (bucket >= static_cast<int>(dim.cuts.size())) ? std::numeric_limits<double>::infinity()
+                                                           : dim.cuts[static_cast<size_t>(bucket)];
       }
+      row.dim_bucket[dim.field] = bucket;
+      row.dim_lo[dim.field] = lo;
+      row.dim_hi[dim.field] = hi;
       parts.push_back(dim.field + "=b" + std::to_string(bucket));
     }
     std::ostringstream key;
@@ -2609,10 +2940,236 @@ bool ComputeLayer3Augmentation(
 
   const std::string outcomes_path = JsonStringAt(plan, "/outputs/layer3/artifacts/outcomes_per_event", "");
   const std::string bucket_path = JsonStringAt(plan, "/outputs/layer3/artifacts/bucket_stats", "");
+  const std::string audit_path = JsonStringAt(plan, "/outputs/layer3/artifacts/decision_audit", "");
+
+  struct BucketAgg {
+    std::string symbol;
+    std::string bucket_key;
+    int horizon_bars = 0;
+    std::string side = "long";
+    int n_trades = 0;
+    double sum_net = 0.0;
+    std::vector<double> mfe;
+    std::vector<double> mfa;
+    std::unordered_map<std::string, double> dim_min;
+    std::unordered_map<std::string, double> dim_max;
+    std::unordered_map<std::string, double> dim_lo;
+    std::unordered_map<std::string, double> dim_hi;
+    bool eligible = true;
+  };
+  std::map<std::string, BucketAgg> agg;
+  const auto agg_key = [](const OutcomeRow& out) {
+    return out.symbol + "\x1f" + out.bucket_key + "\x1f" + std::to_string(out.horizon_bars) + "\x1f" + out.side;
+  };
+  for (const auto& out : outcomes) {
+    auto& a = agg[agg_key(out)];
+    a.symbol = out.symbol;
+    a.bucket_key = out.bucket_key;
+    a.horizon_bars = out.horizon_bars;
+    a.side = out.side;
+    a.n_trades += 1;
+    a.sum_net += out.net_ret_pct;
+    a.mfe.push_back(out.mfe_pct);
+    a.mfa.push_back(out.mfa_pct);
+    for (const auto& dim : dims) {
+      auto dim_value_it = out.numeric_fields.find(dim.field);
+      if (dim_value_it != out.numeric_fields.end() && out.dim_bucket.find(dim.field) != out.dim_bucket.end() &&
+          out.dim_bucket.at(dim.field) >= 0) {
+        auto min_it = a.dim_min.find(dim.field);
+        if (min_it == a.dim_min.end()) {
+          a.dim_min[dim.field] = dim_value_it->second;
+          a.dim_max[dim.field] = dim_value_it->second;
+        } else {
+          min_it->second = std::min(min_it->second, dim_value_it->second);
+          a.dim_max[dim.field] = std::max(a.dim_max[dim.field], dim_value_it->second);
+        }
+      }
+      if (out.dim_lo.find(dim.field) != out.dim_lo.end()) {
+        a.dim_lo[dim.field] = out.dim_lo.at(dim.field);
+      }
+      if (out.dim_hi.find(dim.field) != out.dim_hi.end()) {
+        a.dim_hi[dim.field] = out.dim_hi.at(dim.field);
+      }
+    }
+  }
+
+  const auto* rules_v = sre::ResolvePointer(plan, "/outputs/layer3/eligibility/rules");
+  std::vector<std::vector<std::string>> audit_rows;
+  const auto evaluate_bucket_rule = [&](
+                                        const JsonValue& rule,
+                                        const std::unordered_map<std::string, std::string>& fields,
+                                        bool& pass,
+                                        std::string& reason) {
+    pass = false;
+    reason = "invalid_rule";
+    if (!rule.IsObject()) {
+      return false;
+    }
+    const auto* scope_v = ObjectGet(rule, "scope");
+    if (!scope_v || !scope_v->IsString() || scope_v->AsString() != "bucket") {
+      pass = true;
+      reason = "scope_skipped";
+      return true;
+    }
+    const auto* field_v = ObjectGet(rule, "field");
+    const auto* op_v = ObjectGet(rule, "op");
+    const auto* value_v = ObjectGet(rule, "value");
+    if (!field_v || !field_v->IsString() || !op_v || !op_v->IsString()) {
+      return false;
+    }
+    const std::string field = field_v->AsString();
+    const std::string op = op_v->AsString();
+    auto it = fields.find(field);
+    const bool has_field = it != fields.end() && !it->second.empty();
+    const std::string lhs_text = has_field ? it->second : "";
+
+    if (op == "not_null") {
+      pass = has_field;
+      reason = pass ? "field present" : "field missing";
+      return true;
+    }
+    if (op == "is_null") {
+      pass = !has_field;
+      reason = pass ? "field missing" : "field present";
+      return true;
+    }
+    if (!has_field) {
+      pass = false;
+      reason = "missing field: " + field;
+      return true;
+    }
+    if (op == "==" || op == "!=") {
+      if (value_v && value_v->IsString()) {
+        pass = (op == "==") ? (lhs_text == value_v->AsString()) : (lhs_text != value_v->AsString());
+        reason = "string compare";
+        return true;
+      }
+      if (value_v && value_v->IsNumber()) {
+        double lhs = 0.0;
+        if (!ParseDoubleStrict(lhs_text, lhs)) {
+          pass = false;
+          reason = "lhs not numeric";
+          return true;
+        }
+        const double rhs = value_v->AsNumber();
+        pass = (op == "==") ? (std::fabs(lhs - rhs) < 1e-12) : (std::fabs(lhs - rhs) >= 1e-12);
+        reason = "numeric compare";
+        return true;
+      }
+      return false;
+    }
+    if (!(op == ">" || op == ">=" || op == "<" || op == "<=")) {
+      return false;
+    }
+    if (!value_v || !value_v->IsNumber()) {
+      return false;
+    }
+    double lhs = 0.0;
+    if (!ParseDoubleStrict(lhs_text, lhs)) {
+      pass = false;
+      reason = "lhs not numeric";
+      return true;
+    }
+    const double rhs = value_v->AsNumber();
+    if (op == ">") pass = lhs > rhs;
+    if (op == ">=") pass = lhs >= rhs;
+    if (op == "<") pass = lhs < rhs;
+    if (op == "<=") pass = lhs <= rhs;
+    reason = "lhs=" + FormatNumber(lhs) + " op " + op + " rhs=" + FormatNumber(rhs);
+    return true;
+  };
+
+  for (auto& [_, a] : agg) {
+    std::unordered_map<std::string, std::string> fields;
+    fields["n_trades"] = std::to_string(a.n_trades);
+    fields["EV"] = FormatNumber(a.n_trades > 0 ? a.sum_net / static_cast<double>(a.n_trades) : 0.0);
+    fields["ev_net_ret"] = fields["EV"];
+    fields["mfe_p50"] = FormatNumber(QuantileValue(a.mfe, 0.50));
+    fields["mfe_p80"] = FormatNumber(QuantileValue(a.mfe, 0.80));
+    fields["mfe_p90"] = FormatNumber(QuantileValue(a.mfe, 0.90));
+    fields["mfe_p95"] = FormatNumber(QuantileValue(a.mfe, 0.95));
+    fields["mfa_p50"] = FormatNumber(QuantileValue(a.mfa, 0.50));
+    fields["mfa_p25"] = FormatNumber(QuantileValue(a.mfa, 0.25));
+    fields["mfa_p10"] = FormatNumber(QuantileValue(a.mfa, 0.10));
+    fields["mfa_p05"] = FormatNumber(QuantileValue(a.mfa, 0.05));
+    fields["side"] = a.side;
+    fields["horizon_bars"] = std::to_string(a.horizon_bars);
+    fields["bucket_key"] = a.bucket_key;
+
+    bool eligible = true;
+    if (rules_v && rules_v->IsArray()) {
+      for (size_t i = 0; i < rules_v->AsArray().items.size(); ++i) {
+        const auto& rule = rules_v->AsArray().items[i];
+        std::string reason;
+        bool pass = false;
+        if (!evaluate_bucket_rule(rule, fields, pass, reason)) {
+          EmitRuntimeFeatureError(
+              sink,
+              "E_NOT_IMPLEMENTED",
+              "CHK_RUNTIME_LAYER3_RULE_EVAL_NOT_IMPLEMENTED",
+              "Layer3 eligibility rule could not be evaluated in bucket_eval mode.",
+              "valid BucketRule with supported op",
+              "unsupported rule",
+              "/outputs/layer3/eligibility/rules/" + std::to_string(i),
+              "Use BucketRule operators supported by runtime.");
+          return false;
+        }
+        const std::string rule_id = JsonStringAt(rule, "/id", "rule");
+        audit_rows.push_back(
+            {a.symbol,
+             a.bucket_key,
+             a.symbol + "|" + a.bucket_key + "|h=" + std::to_string(a.horizon_bars) + "|side=" + a.side,
+             std::to_string(a.horizon_bars),
+             a.side,
+             rule_id,
+             pass ? "pass" : "fail",
+             reason});
+        if (!pass) {
+          eligible = false;
+        }
+      }
+    }
+    a.eligible = eligible;
+  }
+
+  std::vector<std::string> metric_emit;
+  const auto* emit_v = sre::ResolvePointer(plan, "/outputs/layer3/metrics/per_bucket/emit");
+  if (emit_v && emit_v->IsArray()) {
+    for (const auto& item : emit_v->AsArray().items) {
+      if (item.IsString() && !item.AsString().empty()) {
+        metric_emit.push_back(item.AsString());
+      }
+    }
+  }
+  if (metric_emit.empty()) {
+    metric_emit = {"n_trades", "EV", "mfe_p50", "mfe_p80", "mfe_p90", "mfe_p95", "mfa_p50", "mfa_p25", "mfa_p10", "mfa_p05"};
+  }
+
+  const auto format_bound = [](double value) {
+    if (std::isnan(value)) return std::string();
+    if (std::isinf(value)) return value < 0 ? std::string("-inf") : std::string("inf");
+    return FormatNumber(value);
+  };
+  const auto metric_value = [&](const BucketAgg& a, std::string_view metric) {
+    if (metric == "n_trades") return std::to_string(a.n_trades);
+    if (a.n_trades <= 0) return std::string();
+    if (metric == "EV" || metric == "ev_net_ret") return FormatNumber(a.sum_net / static_cast<double>(a.n_trades));
+    if (metric == "mfe_p50") return FormatNumber(QuantileValue(a.mfe, 0.50));
+    if (metric == "mfe_p80") return FormatNumber(QuantileValue(a.mfe, 0.80));
+    if (metric == "mfe_p90") return FormatNumber(QuantileValue(a.mfe, 0.90));
+    if (metric == "mfe_p95") return FormatNumber(QuantileValue(a.mfe, 0.95));
+    if (metric == "mfa_p50") return FormatNumber(QuantileValue(a.mfa, 0.50));
+    if (metric == "mfa_p25") return FormatNumber(QuantileValue(a.mfa, 0.25));
+    if (metric == "mfa_p10") return FormatNumber(QuantileValue(a.mfa, 0.10));
+    if (metric == "mfa_p05") return FormatNumber(QuantileValue(a.mfa, 0.05));
+    return std::string();
+  };
 
   if (!outcomes_path.empty()) {
-    const std::vector<std::string> headers = {
-        "symbol", "event_index", "event_bar_index", "entry_price", "mfe", "mfa", "ret", "ret_net", "bucket_key"};
+    std::vector<std::string> headers = {"symbol", "event_index", "event_bar_index", "entry_price"};
+    if (emit_horizon_column) headers.push_back("horizon_bars");
+    if (emit_side_column) headers.push_back("side");
+    headers.insert(headers.end(), {"mfe_pct", "mfa_pct", "ret_pct", "net_ret_pct", "bucket_key"});
     const bool per_symbol = PathTemplateUsesSymbol(outcomes_path);
     if (per_symbol) {
       for (const auto& symbol : symbols) {
@@ -2621,134 +3178,70 @@ bool ComputeLayer3Augmentation(
           if (row.symbol != symbol) {
             continue;
           }
-          rows.push_back({row.symbol,
-                          std::to_string(row.event_index),
-                          std::to_string(row.event_bar_index),
-                          FormatNumber(row.entry_price),
-                          FormatNumber(row.mfe),
-                          FormatNumber(row.mfa),
-                          FormatNumber(row.ret),
-                          FormatNumber(row.ret_net),
-                          row.bucket_key});
+          std::vector<std::string> out_row = {
+              row.symbol, std::to_string(row.event_index), std::to_string(row.event_bar_index), FormatNumber(row.entry_price)};
+          if (emit_horizon_column) out_row.push_back(std::to_string(row.horizon_bars));
+          if (emit_side_column) out_row.push_back(row.side);
+          out_row.push_back(FormatNumber(row.mfe_pct));
+          out_row.push_back(FormatNumber(row.mfa_pct));
+          out_row.push_back(FormatNumber(row.ret_pct));
+          out_row.push_back(FormatNumber(row.net_ret_pct));
+          out_row.push_back(row.bucket_key);
+          rows.push_back(std::move(out_row));
         }
         WriteCsvFile(ResolvePlanOutputPath(outcomes_path, repo_root, symbol), headers, rows);
       }
     } else {
       std::vector<std::vector<std::string>> rows;
       for (const auto& row : outcomes) {
-        rows.push_back({row.symbol,
-                        std::to_string(row.event_index),
-                        std::to_string(row.event_bar_index),
-                        FormatNumber(row.entry_price),
-                        FormatNumber(row.mfe),
-                        FormatNumber(row.mfa),
-                        FormatNumber(row.ret),
-                        FormatNumber(row.ret_net),
-                        row.bucket_key});
+        std::vector<std::string> out_row = {
+            row.symbol, std::to_string(row.event_index), std::to_string(row.event_bar_index), FormatNumber(row.entry_price)};
+        if (emit_horizon_column) out_row.push_back(std::to_string(row.horizon_bars));
+        if (emit_side_column) out_row.push_back(row.side);
+        out_row.push_back(FormatNumber(row.mfe_pct));
+        out_row.push_back(FormatNumber(row.mfa_pct));
+        out_row.push_back(FormatNumber(row.ret_pct));
+        out_row.push_back(FormatNumber(row.net_ret_pct));
+        out_row.push_back(row.bucket_key);
+        rows.push_back(std::move(out_row));
       }
       WriteCsvFile(ResolvePlanOutputPath(outcomes_path, repo_root, ""), headers, rows);
     }
   }
 
   if (!bucket_path.empty()) {
-    struct BucketAgg {
-      int count = 0;
-      double sum_ret_net = 0.0;
-      double sum_mfe = 0.0;
-      double sum_mfa = 0.0;
-      std::vector<double> mfe_values;
-      std::vector<double> mfa_values;
-    };
-    std::map<std::pair<std::string, std::string>, BucketAgg> per_symbol_agg;
-    std::map<std::string, BucketAgg> merged_agg;
-    for (const auto& row : outcomes) {
-      auto& agg = per_symbol_agg[{row.symbol, row.bucket_key}];
-      agg.count += 1;
-      agg.sum_ret_net += row.ret_net;
-      agg.sum_mfe += row.mfe;
-      agg.sum_mfa += row.mfa;
-      agg.mfe_values.push_back(row.mfe);
-      agg.mfa_values.push_back(row.mfa);
-
-      auto& merged = merged_agg[row.bucket_key];
-      merged.count += 1;
-      merged.sum_ret_net += row.ret_net;
-      merged.sum_mfe += row.mfe;
-      merged.sum_mfa += row.mfa;
-      merged.mfe_values.push_back(row.mfe);
-      merged.mfa_values.push_back(row.mfa);
-    }
-
-    std::vector<std::string> metric_emit;
-    const auto* emit_v = sre::ResolvePointer(plan, "/outputs/layer3/metrics/per_bucket/emit");
-    if (emit_v && emit_v->IsArray()) {
-      for (const auto& item : emit_v->AsArray().items) {
-        if (item.IsString() && !item.AsString().empty()) {
-          metric_emit.push_back(item.AsString());
-        }
-      }
-    }
-    if (metric_emit.empty()) {
-      metric_emit = {"n_trades", "EV", "mean_mfe", "mean_mfa"};
-    }
-
-    const auto parse_pct_metric = [](std::string_view metric, std::string_view prefix, double& q_out) -> bool {
-      if (metric.rfind(prefix, 0) != 0) {
-        return false;
-      }
-      std::string tail(metric.substr(prefix.size()));
-      if (tail.empty()) {
-        return false;
-      }
-      double pct = 0.0;
-      if (!ParseDoubleStrict(tail, pct)) {
-        return false;
-      }
-      pct = std::max(0.0, std::min(100.0, pct));
-      q_out = pct / 100.0;
-      return true;
-    };
-
-    const auto metric_value = [&](const BucketAgg& agg, std::string_view metric) -> std::string {
-      if (metric == "n_trades") {
-        return std::to_string(agg.count);
-      }
-      if (agg.count <= 0) {
-        return "";
-      }
-      if (metric == "EV") {
-        return FormatNumber(agg.sum_ret_net / static_cast<double>(agg.count));
-      }
-      if (metric == "mean_mfe") {
-        return FormatNumber(agg.sum_mfe / static_cast<double>(agg.count));
-      }
-      if (metric == "mean_mfa") {
-        return FormatNumber(agg.sum_mfa / static_cast<double>(agg.count));
-      }
-      double q = 0.0;
-      if (parse_pct_metric(metric, "mfe_p", q)) {
-        return FormatNumber(QuantileValue(agg.mfe_values, q));
-      }
-      if (parse_pct_metric(metric, "mfa_p", q)) {
-        return FormatNumber(QuantileValue(agg.mfa_values, q));
-      }
-      return "";
-    };
-
     std::vector<std::string> headers = {"symbol", "bucket_key"};
+    if (emit_horizon_column) headers.push_back("horizon_bars");
+    if (emit_side_column) headers.push_back("side");
+    headers.push_back("eligible");
+    for (const auto& dim : dims) {
+      headers.push_back(dim.field + "_min");
+      headers.push_back(dim.field + "_max");
+      headers.push_back(dim.field + "_lo");
+      headers.push_back(dim.field + "_hi");
+    }
     headers.insert(headers.end(), metric_emit.begin(), metric_emit.end());
 
     const bool per_symbol = PathTemplateUsesSymbol(bucket_path);
     if (per_symbol) {
       for (const auto& symbol : symbols) {
         std::vector<std::vector<std::string>> rows;
-        for (const auto& [key, agg] : per_symbol_agg) {
-          if (key.first != symbol || agg.count <= 0) {
+        for (const auto& [_, bucket] : agg) {
+          if (bucket.symbol != symbol || bucket.n_trades <= 0) {
             continue;
           }
-          std::vector<std::string> out_row = {symbol, key.second};
+          std::vector<std::string> out_row = {bucket.symbol, bucket.bucket_key};
+          if (emit_horizon_column) out_row.push_back(std::to_string(bucket.horizon_bars));
+          if (emit_side_column) out_row.push_back(bucket.side);
+          out_row.push_back(bucket.eligible ? "1" : "0");
+          for (const auto& dim : dims) {
+            out_row.push_back(bucket.dim_min.find(dim.field) == bucket.dim_min.end() ? "" : FormatNumber(bucket.dim_min.at(dim.field)));
+            out_row.push_back(bucket.dim_max.find(dim.field) == bucket.dim_max.end() ? "" : FormatNumber(bucket.dim_max.at(dim.field)));
+            out_row.push_back(bucket.dim_lo.find(dim.field) == bucket.dim_lo.end() ? "" : format_bound(bucket.dim_lo.at(dim.field)));
+            out_row.push_back(bucket.dim_hi.find(dim.field) == bucket.dim_hi.end() ? "" : format_bound(bucket.dim_hi.at(dim.field)));
+          }
           for (const auto& metric : metric_emit) {
-            out_row.push_back(metric_value(agg, metric));
+            out_row.push_back(metric_value(bucket, metric));
           }
           rows.push_back(std::move(out_row));
         }
@@ -2756,17 +3249,45 @@ bool ComputeLayer3Augmentation(
       }
     } else {
       std::vector<std::vector<std::string>> rows;
-      for (const auto& [bucket_key, agg] : merged_agg) {
-        if (agg.count <= 0) {
+      for (const auto& [_, bucket] : agg) {
+        if (bucket.n_trades <= 0) {
           continue;
         }
-        std::vector<std::string> out_row = {"ALL", bucket_key};
+        std::vector<std::string> out_row = {bucket.symbol, bucket.bucket_key};
+        if (emit_horizon_column) out_row.push_back(std::to_string(bucket.horizon_bars));
+        if (emit_side_column) out_row.push_back(bucket.side);
+        out_row.push_back(bucket.eligible ? "1" : "0");
+        for (const auto& dim : dims) {
+          out_row.push_back(bucket.dim_min.find(dim.field) == bucket.dim_min.end() ? "" : FormatNumber(bucket.dim_min.at(dim.field)));
+          out_row.push_back(bucket.dim_max.find(dim.field) == bucket.dim_max.end() ? "" : FormatNumber(bucket.dim_max.at(dim.field)));
+          out_row.push_back(bucket.dim_lo.find(dim.field) == bucket.dim_lo.end() ? "" : format_bound(bucket.dim_lo.at(dim.field)));
+          out_row.push_back(bucket.dim_hi.find(dim.field) == bucket.dim_hi.end() ? "" : format_bound(bucket.dim_hi.at(dim.field)));
+        }
         for (const auto& metric : metric_emit) {
-          out_row.push_back(metric_value(agg, metric));
+          out_row.push_back(metric_value(bucket, metric));
         }
         rows.push_back(std::move(out_row));
       }
       WriteCsvFile(ResolvePlanOutputPath(bucket_path, repo_root, ""), headers, rows);
+    }
+  }
+
+  if (!audit_path.empty()) {
+    const std::vector<std::string> headers = {
+        "symbol", "bucket_key", "context_id", "horizon_bars", "side", "rule_id", "result", "reason"};
+    const bool per_symbol = PathTemplateUsesSymbol(audit_path);
+    if (per_symbol) {
+      for (const auto& symbol : symbols) {
+        std::vector<std::vector<std::string>> rows;
+        for (const auto& row : audit_rows) {
+          if (!row.empty() && row[0] == symbol) {
+            rows.push_back(row);
+          }
+        }
+        WriteCsvFile(ResolvePlanOutputPath(audit_path, repo_root, symbol), headers, rows);
+      }
+    } else {
+      WriteCsvFile(ResolvePlanOutputPath(audit_path, repo_root, ""), headers, audit_rows);
     }
   }
 

@@ -5,21 +5,21 @@
       "fixture_id": "FIX_INVALID_01",
       "code": "E_LAYER_PERMUTE_INVALID",
       "blame_pointers": [
-        "/parameters/permute/0/kind"
+        "/parameters"
       ]
     },
     {
       "fixture_id": "FIX_INVALID_02",
       "code": "E_LAYER_PERMUTE_INVALID",
       "blame_pointers": [
-        "/studies/ema_fast/mode"
+        "/parameters"
       ]
     },
     {
       "fixture_id": "FIX_INVALID_03",
       "code": "E_LAYER_PERMUTE_INVALID",
       "blame_pointers": [
-        "/parameters/permute/0/kind"
+        "/parameters"
       ]
     },
     {

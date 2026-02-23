@@ -23,16 +23,7 @@
     ],
     "backend": {
       "type": "sierra_chart",
-      "sierra_chart": {
-        "layout_contract": {
-          "readiness": {
-            "mode": "sentinel"
-          }
-        }
-      }
-    },
-    "sentinel": {
-      "enabled": false
+      "sierra_chart": {}
     }
   },
   "studies": {
@@ -71,13 +62,10 @@
   },
   "meta": {
     "fixture_id": "L6_semantics_integrity_invalid_03",
-    "expected_error": "E_SEM_READINESS_CONTRACT_MISSING",
-    "invalid_pointer": "/execution"
-  },
-  "validation": {
-    "require_sierra_readiness_contract": true
+    "expected_error": "E_SEM_SAME_BAR_LEAKAGE",
+    "invalid_pointer": "/validation"
   },
   "compat": {
-    "invalid_case": false
+    "invalid_case": true
   }
 }

@@ -26,7 +26,17 @@
       "sierra_chart": {}
     }
   },
-  "studies": {},
+  "studies": {
+    "ema_fast": {
+      "mode": "managed",
+      "study_id": 1,
+      "outputs": {
+        "value": {
+          "subgraph": 0
+        }
+      }
+    }
+  },
   "chains": {
     "main": {
       "steps": [
@@ -56,6 +66,6 @@
     "invalid_pointer": "/studies"
   },
   "compat": {
-    "invalid_case": false
+    "invalid_case": true
   }
 }

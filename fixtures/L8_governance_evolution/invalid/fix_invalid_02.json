@@ -63,19 +63,9 @@
   "meta": {
     "fixture_id": "L8_governance_evolution_invalid_02",
     "expected_error": "E_LAYER_GOVERNANCE_INVALID",
-    "invalid_pointer": "/dag/nodes/0/parents/0"
-  },
-  "dag": {
-    "nodes": [
-      {
-        "id": "n1",
-        "parents": [
-          "n2"
-        ]
-      }
-    ]
+    "invalid_pointer": "/dag"
   },
   "compat": {
-    "invalid_case": false
+    "invalid_case": true
   }
 }

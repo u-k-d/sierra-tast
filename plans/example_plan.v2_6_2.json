@@ -1,41 +1,34 @@
 {
   "version": 262,
   "plan_kind": "sierra_research_engine.plan",
-
   "plan_io": {
     "format": "json"
   },
-
   "compat": {
     "min_extension_api": 1,
     "allow_legacy_steps_without_kind": true
   },
-
   "meta": {
-    "name": "Layer3 Test Plan v2 — Symbol-Scoped L2 → L3",
-    "description": "Runs Layer2 authoritative research per symbol and feeds the symbol-scoped CSV into Layer3 to emit trade instructions and decision audit artifacts. No unscoped paths.",
-    "tags": ["layer2", "layer3", "symbol_scoped", "authoritative", "rvol"]
+    "name": "Layer3 Bucket Eval Plan v2",
+    "description": "Layer2 emits authoritative events from plan-bound study features; Layer3 computes outcomes and bucket-level EV.",
+    "tags": ["layer2", "layer3", "bucket_eval", "authoritative", "rvol"]
   },
-
   "universe": {
     "source": "inline",
-    "symbols": ["WORX", "RIME"],
+    "symbols": ["WORX"],
     "timeframe": "4h",
     "date_range": {
       "start": "2025-01-01",
       "end": "2026-02-21"
     }
   },
-
   "execution": {
     "controller_chart": 6,
     "worker_charts": [2],
-
     "permissions": {
       "allow_filesystem_write": true,
       "allow_network": false
     },
-
     "sentinel": {
       "enabled": true,
       "study_id": 6,
@@ -44,12 +37,10 @@
       "ready_value": 2.0,
       "timeout_cycles": 30
     },
-
     "backend": {
       "type": "sierra_chart",
       "sierra_chart": {
         "scheduler_mode": "serial",
-
         "layout_contract": {
           "enabled": true,
           "controller_chart": 6,
@@ -69,9 +60,56 @@
           }
         }
       }
+    },
+    "layer2": {
+      "enabled": true,
+      "mode": "authoritative_events",
+      "bar_basis": "close",
+      "require_final_bar": true,
+      "align": {
+        "mode": "last_completed"
+      },
+      "indicator_dag": {
+        "nodes": {
+          "rvol_n": {
+            "kind": "study_ref",
+            "ref": "@study.rvol.sg1"
+          },
+          "threshold_n": {
+            "kind": "param",
+            "type": "float",
+            "value": 7.0
+          },
+          "trigger_n": {
+            "kind": "gt",
+            "inputs": ["rvol_n", "threshold_n"]
+          }
+        }
+      },
+      "event_emitter": {
+        "trigger_node": "trigger_n",
+        "emit_mode": "on_true_edge",
+        "cooldown_bars": 10,
+        "emit_columns": [
+          {
+            "name": "entry_price",
+            "type": "float",
+            "ref": "@bar.close"
+          },
+          {
+            "name": "bar_datetime",
+            "type": "datetime",
+            "ref": "@bar.datetime"
+          },
+          {
+            "name": "rvol",
+            "type": "float",
+            "node": "rvol_n"
+          }
+        ]
+      }
     }
   },
-
   "studies": {
     "rvol": {
       "mode": "bind",
@@ -85,10 +123,9 @@
       }
     }
   },
-
   "chains": {
     "main": {
-      "description": "Environment parity chain — binds RVOL SG1",
+      "description": "Environment parity chain - binds RVOL SG1",
       "steps": [
         {
           "kind": "read",
@@ -97,129 +134,138 @@
       ]
     }
   },
-
   "outputs": {
-
     "dataset": {
       "format": "csv",
-
-  
       "path": "artifacts/{symbol}/layer2_authoritative.csv",
-
+      "source": "layer2_event_emitter",
       "fields": [
         {
           "name": "symbol",
-          "ref": "@symbol",
+          "ref": "@event.symbol",
           "type": "string",
           "nullable": false
         },
         {
+          "name": "bar_index",
+          "ref": "@event.bar_index",
+          "type": "int",
+          "nullable": false
+        },
+        {
           "name": "bar_datetime",
-          "ref": "@bar.datetime",
+          "ref": "@event.bar_datetime",
           "type": "datetime",
           "nullable": false
         },
         {
-          "name": "close",
-          "ref": "@bar.close",
+          "name": "entry_price",
+          "ref": "@event.entry_price",
           "type": "float",
           "nullable": false
         },
         {
           "name": "rvol",
-          "ref": "@study.rvol.sg1",
+          "ref": "@event.rvol",
           "type": "float",
-          "nullable": true
+          "nullable": false
         }
       ]
     },
-
-"layer3": {
-  "enabled": true,
-
-  "mode": "rr_menu",
-
-  "inputs": {
-    "layer2_authoritative_csv": "artifacts/{symbol}/layer2_authoritative.csv"
-  },
-
-  "eligibility": {
-    "emit_for_all_eligible_buckets": true,
-
-    "rules": [
-      {
-        "id": "min_samples",
-        "scope": "bucket",
-        "field": "total_trades",
-        "op": ">=",
-        "value": 80
+    "layer3": {
+      "enabled": true,
+      "mode": "bucket_eval",
+      "inputs": {
+        "layer2_authoritative_csv": "artifacts/{symbol}/layer2_authoritative.csv"
       },
-      {
-        "id": "ev_floor",
-        "scope": "bucket",
-        "field": "EV",
-        "op": ">=",
-        "value": 0.0
+      "eligibility": {
+        "emit_for_all_eligible_buckets": true,
+        "rules": [
+          {
+            "id": "min_samples",
+            "scope": "bucket",
+            "field": "n_trades",
+            "op": ">=",
+            "value": 20
+          },
+          {
+            "id": "ev_floor",
+            "scope": "bucket",
+            "field": "EV",
+            "op": ">=",
+            "value": 0.0
+          }
+        ],
+        "quantile_sample_gates": []
       },
-      {
-        "id": "require_price_quantiles",
-        "scope": "bucket",
-        "field": "p90_mae_price",
-        "op": "not_null"
+      "rr_menu": {
+        "risk_quantiles": [0.8, 0.9],
+        "reward_quantiles": [0.5, 0.8],
+        "pairing": "cartesian",
+        "row_rules": []
       },
-      {
-        "id": "require_entry_price",
-        "scope": "bucket",
-        "field": "avg_entry_price",
-        "op": ">",
-        "value": 0.0
+      "normalization": {
+        "mode": "pct_of_price",
+        "entry_price_field": "entry_price",
+        "emit_raw_price_columns": true,
+        "emit_pct_columns": true
+      },
+      "units_contract": {
+        "signal_bucket_units": "signal:rvol",
+        "mae_units": "pct",
+        "mfe_units": "pct",
+        "enforce_no_bucket_clamp": true
+      },
+      "bucketing": {
+        "dimensions": [
+          {
+            "field": "rvol",
+            "method": "quantile",
+            "q": [0.25, 0.5, 0.75]
+          }
+        ]
+      },
+      "outcomes": {
+        "enabled": true,
+        "entry_price_field": "entry_price",
+        "horizons_bars": [5, 10, 15, 20],
+        "sides": ["long", "short"],
+        "horizon": {
+          "type": "bars",
+          "value": 5
+        },
+        "price_fields": {
+          "high": "high",
+          "low": "low",
+          "close": "close"
+        },
+        "cost_model": {
+          "type": "none"
+        }
+      },
+      "metrics": {
+        "per_bucket": {
+          "emit": [
+            "n_trades",
+            "EV",
+            "mfe_p50",
+            "mfe_p80",
+            "mfe_p90",
+            "mfe_p95",
+            "mfa_p50",
+            "mfa_p25",
+            "mfa_p10",
+            "mfa_p05"
+          ]
+        }
+      },
+      "artifacts": {
+        "rr_buckets": "artifacts/{symbol}/layer3_rr_buckets.csv",
+        "decision_audit": "artifacts/{symbol}/layer3_decision_audit.csv",
+        "outcomes_per_event": "artifacts/{symbol}/layer3_outcomes_per_event.csv",
+        "bucket_stats": "artifacts/{symbol}/layer3_bucket_stats.csv"
       }
-    ],
-
-    "quantile_sample_gates": [
-      { "q": 0.95, "min_n": 200 },
-      { "q": 0.90, "min_n": 80 },
-      { "q": 0.80, "min_n": 40 }
-    ]
-  },
-
-  "rr_menu": {
-    "risk_quantiles": [0.80, 0.90, 0.95],
-    "reward_quantiles": [0.50, 0.80, 0.90],
-    "pairing": "cartesian",
-
-    "row_rules": [
-      {
-        "id": "rr_min",
-        "scope": "rr_row",
-        "field": "rr_price",
-        "op": ">=",
-        "value": 1.0
-      }
-    ]
-  },
-
-  "normalization": {
-    "mode": "pct_of_price",
-    "entry_price_field": "avg_entry_price",
-    "emit_raw_price_columns": true,
-    "emit_pct_columns": true
-  },
-
-  "units_contract": {
-    "signal_bucket_units": "signal:rvol",
-    "mae_units": "price",
-    "mfe_units": "price",
-    "enforce_no_bucket_clamp": true
-  },
-
-  "artifacts": {
-    "rr_buckets": "artifacts/{symbol}/layer3_rr_buckets.csv",
-    "decision_audit": "artifacts/{symbol}/layer3_decision_audit.csv"
-  }
-},
-
-
+    },
     "artifacts": {
       "enabled": true,
       "base_dir": "artifacts",

@@ -12,14 +12,14 @@
       "fixture_id": "FIX_INVALID_02",
       "code": "E_LAYER_STUDY_BINDING_INVALID",
       "blame_pointers": [
-        "/studies/ema_fast/mode"
+        "/studies"
       ]
     },
     {
       "fixture_id": "FIX_INVALID_03",
       "code": "E_LAYER_STUDY_BINDING_INVALID",
       "blame_pointers": [
-        "/studies/ema_fast/outputs/value/subgraph"
+        "/studies"
       ]
     },
     {

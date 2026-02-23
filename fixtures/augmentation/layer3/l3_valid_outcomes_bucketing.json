@@ -9,7 +9,11 @@
     "symbols": [
       "ES",
       "NQ"
-    ]
+    ],
+    "date_range": {
+      "start": "2025-01-01",
+      "end": "2025-01-01"
+    }
   },
   "execution": {
     "worker_charts": [
@@ -25,24 +29,56 @@
     "layer2": {
       "enabled": true,
       "mode": "authoritative_events",
+      "require_final_bar": true,
+      "align": {
+        "mode": "last_completed"
+      },
       "indicator_dag": {
         "nodes": {
+          "close_n": {
+            "kind": "bar_field",
+            "field": "close"
+          },
+          "anchor_n": {
+            "kind": "param",
+            "type": "float",
+            "value": 80.0
+          },
+          "rvol_n": {
+            "kind": "diff",
+            "inputs": [
+              "close_n",
+              "anchor_n"
+            ]
+          },
           "always_true": {
             "kind": "param",
             "type": "bool",
             "value": true
+          },
+          "trigger_n": {
+            "kind": "and",
+            "inputs": [
+              "always_true",
+              "always_true"
+            ]
           }
         }
       },
       "event_emitter": {
-        "trigger_node": "always_true",
+        "trigger_node": "trigger_n",
         "emit_mode": "on_true",
-        "cooldown_bars": 2,
+        "cooldown_bars": 4,
         "emit_columns": [
           {
             "name": "entry_price",
             "type": "float",
             "ref": "@bar.close"
+          },
+          {
+            "name": "rvol",
+            "type": "float",
+            "node": "rvol_n"
           },
           {
             "name": "bar_datetime",
@@ -92,6 +128,14 @@
         {
           "name": "entry_price",
           "ref": "@event.entry_price"
+        },
+        {
+          "name": "rvol",
+          "ref": "@event.rvol"
+        },
+        {
+          "name": "bar_datetime",
+          "ref": "@event.bar_datetime"
         }
       ]
     },
@@ -101,14 +145,33 @@
       "inputs": {
         "layer2_authoritative_csv": "__TMP__/layer3/{symbol}/authoritative.csv"
       },
-      "eligibility": {},
+      "eligibility": {
+        "rules": [
+          {
+            "id": "min_trades",
+            "scope": "bucket",
+            "field": "n_trades",
+            "op": ">=",
+            "value": 1
+          },
+          {
+            "id": "ev_floor",
+            "scope": "bucket",
+            "field": "EV",
+            "op": ">",
+            "value": -1.0
+          }
+        ]
+      },
       "bucketing": {
         "dimensions": [
           {
-            "field": "entry_price",
+            "field": "rvol",
             "method": "quantile",
             "q": [
-              0.5
+              0.25,
+              0.5,
+              0.75
             ]
           }
         ]
@@ -116,10 +179,16 @@
       "outcomes": {
         "enabled": true,
         "entry_price_field": "entry_price",
-        "horizon": {
-          "type": "bars",
-          "value": 3
-        },
+        "horizons_bars": [
+          5,
+          10,
+          15,
+          20
+        ],
+        "sides": [
+          "long",
+          "short"
+        ],
         "price_fields": {
           "high": "high",
           "low": "low",
@@ -134,13 +203,15 @@
         "per_bucket": {
           "emit": [
             "n_trades",
-            "EV"
+            "EV",
+            "mfe_p50",
+            "mfa_p50"
           ]
         }
       },
       "artifacts": {
         "rr_buckets": "__TMP__/layer3/{symbol}/rr_unused.csv",
-        "decision_audit": "__TMP__/layer3/{symbol}/audit_unused.csv",
+        "decision_audit": "__TMP__/layer3/{symbol}/decision_audit.csv",
         "outcomes_per_event": "__TMP__/layer3/{symbol}/outcomes_per_event.csv",
         "bucket_stats": "__TMP__/layer3/{symbol}/bucket_stats.csv"
       }

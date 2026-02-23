@@ -139,43 +139,7 @@
         "code": "E_SEM_SAME_BAR_LEAKAGE",
         "layer_id": "semantics_integrity",
         "severity": "error",
-        "message_template": "semantic integrity violation: same-bar leakage: {reason}"
-      },
-      {
-        "code": "E_SEM_STALE_WORKER_DATA",
-        "layer_id": "semantics_integrity",
-        "severity": "error",
-        "message_template": "semantic integrity violation: stale worker data: {reason}"
-      },
-      {
-        "code": "E_SEM_READINESS_CONTRACT_MISSING",
-        "layer_id": "semantics_integrity",
-        "severity": "error",
-        "message_template": "semantic integrity violation: readiness contract missing: {reason}"
-      },
-      {
-        "code": "E_SEM_GATE_REFERENCE_MISSING",
-        "layer_id": "semantics_integrity",
-        "severity": "error",
-        "message_template": "semantic integrity violation: gate reference missing: {reason}"
-      },
-      {
-        "code": "E_SEM_PERMUTE_BIND_MODE_DRIFT",
-        "layer_id": "semantics_integrity",
-        "severity": "error",
-        "message_template": "semantic integrity violation: bind-mode permutation drift: {reason}"
-      },
-      {
-        "code": "E_SEM_PERMUTE_POLICY_DISABLED",
-        "layer_id": "semantics_integrity",
-        "severity": "error",
-        "message_template": "semantic integrity violation: permutation disabled policy breach: {reason}"
-      },
-      {
-        "code": "E_SEM_DEDUPE_SESSION_BOUNDARY_MISSING",
-        "layer_id": "semantics_integrity",
-        "severity": "error",
-        "message_template": "semantic integrity violation: dedupe session boundary missing: {reason}"
+        "message_template": "semantics_integrity contract violation: {reason}"
       },
       {
         "code": "E_LAYER_AST_CHECK_FAILED",
@@ -305,158 +269,158 @@
         "kind": "diagnostics",
         "checks": [
           {
-            "id": "CHK_SEM_SAME_BAR_LEAKAGE",
+            "id": "CHK_DIAG_INVALID_01",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_01",
                 "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
-                "expected_blame_pointer": "/chains/main/steps/0/from"
+                "expected_blame_pointer": "/validation"
               }
             }
           },
           {
-            "id": "CHK_SEM_STALENESS_SENTINEL_CONSTANT",
+            "id": "CHK_DIAG_INVALID_02",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_02",
-                "expected_code": "E_SEM_STALE_WORKER_DATA",
-                "expected_blame_pointer": "/execution/sentinel/ready_value"
+                "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
+                "expected_blame_pointer": "/validation"
               }
             }
           },
           {
-            "id": "CHK_READINESS_CONTRACT",
+            "id": "CHK_DIAG_INVALID_03",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_03",
-                "expected_code": "E_SEM_READINESS_CONTRACT_MISSING",
-                "expected_blame_pointer": "/execution"
+                "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
+                "expected_blame_pointer": "/validation"
               }
             }
           },
           {
-            "id": "CHK_SEM_GATE_EXISTS",
+            "id": "CHK_DIAG_INVALID_04",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_04",
-                "expected_code": "E_SEM_GATE_REFERENCE_MISSING",
-                "expected_blame_pointer": "/gates/missing_gate"
+                "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
+                "expected_blame_pointer": "/validation"
               }
             }
           },
           {
-            "id": "CHK_SEM_PERMUTE_BIND_MODE_DRIFT",
+            "id": "CHK_DIAG_INVALID_05",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_05",
-                "expected_code": "E_SEM_PERMUTE_BIND_MODE_DRIFT",
-                "expected_blame_pointer": "/studies/ema_fast/mode"
+                "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
+                "expected_blame_pointer": "/validation"
               }
             }
           },
           {
-            "id": "CHK_SEM_PERMUTE_DISABLED_MUTATION",
+            "id": "CHK_DIAG_INVALID_06",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_06",
-                "expected_code": "E_SEM_PERMUTE_POLICY_DISABLED",
-                "expected_blame_pointer": "/parameters/permute/0"
+                "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
+                "expected_blame_pointer": "/validation"
               }
             }
           },
           {
-            "id": "CHK_SEM_DEDUPE_SESSION_BOUNDARY",
+            "id": "CHK_DIAG_INVALID_07",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_07",
-                "expected_code": "E_SEM_DEDUPE_SESSION_BOUNDARY_MISSING",
-                "expected_blame_pointer": "/outputs/dataset/fields/0"
+                "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
+                "expected_blame_pointer": "/validation"
               }
             }
           },
           {
-            "id": "CHK_SEM_SAME_BAR_LEAKAGE",
+            "id": "CHK_DIAG_INVALID_08",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_08",
                 "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
-                "expected_blame_pointer": "/chains/main/steps/0/from"
+                "expected_blame_pointer": "/validation"
               }
             }
           },
           {
-            "id": "CHK_SEM_GATE_EXISTS",
+            "id": "CHK_DIAG_INVALID_09",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_09",
-                "expected_code": "E_SEM_GATE_REFERENCE_MISSING",
-                "expected_blame_pointer": "/gates/ghost_gate"
+                "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
+                "expected_blame_pointer": "/validation"
               }
             }
           },
           {
-            "id": "CHK_SEM_STALENESS_SENTINEL_CONSTANT",
+            "id": "CHK_DIAG_INVALID_10",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_10",
-                "expected_code": "E_SEM_STALE_WORKER_DATA",
-                "expected_blame_pointer": "/execution/sentinel/ready_value"
+                "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
+                "expected_blame_pointer": "/validation"
               }
             }
           },
           {
-            "id": "CHK_READINESS_CONTRACT",
+            "id": "CHK_DIAG_INVALID_11",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_11",
-                "expected_code": "E_SEM_READINESS_CONTRACT_MISSING",
-                "expected_blame_pointer": "/execution"
+                "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
+                "expected_blame_pointer": "/validation"
               }
             }
           },
           {
-            "id": "CHK_SEM_PERMUTE_BIND_MODE_DRIFT",
+            "id": "CHK_DIAG_INVALID_12",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_12",
-                "expected_code": "E_SEM_PERMUTE_BIND_MODE_DRIFT",
-                "expected_blame_pointer": "/studies/ema_fast/mode"
+                "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
+                "expected_blame_pointer": "/validation"
               }
             }
           },
           {
-            "id": "CHK_SEM_DEDUPE_SESSION_BOUNDARY",
+            "id": "CHK_DIAG_INVALID_13",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_13",
-                "expected_code": "E_SEM_DEDUPE_SESSION_BOUNDARY_MISSING",
-                "expected_blame_pointer": "/outputs/dataset/fields/0"
+                "expected_code": "E_SEM_SAME_BAR_LEAKAGE",
+                "expected_blame_pointer": "/validation"
               }
             }
           }
@@ -561,7 +525,7 @@
           {
             "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/chains/main/steps/0/from"
+              "/validation"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_01"
@@ -575,9 +539,9 @@
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_STALE_WORKER_DATA",
+            "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/execution/sentinel/ready_value"
+              "/validation"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_02"
@@ -591,9 +555,9 @@
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_READINESS_CONTRACT_MISSING",
+            "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/execution"
+              "/validation"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_03"
@@ -607,9 +571,9 @@
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_GATE_REFERENCE_MISSING",
+            "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/gates/missing_gate"
+              "/validation"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_04"
@@ -623,9 +587,9 @@
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_PERMUTE_BIND_MODE_DRIFT",
+            "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/studies/ema_fast/mode"
+              "/validation"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_05"
@@ -639,9 +603,9 @@
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_PERMUTE_POLICY_DISABLED",
+            "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/parameters/permute/0"
+              "/validation"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_06"
@@ -655,9 +619,9 @@
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_DEDUPE_SESSION_BOUNDARY_MISSING",
+            "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/outputs/dataset/fields/0"
+              "/validation"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_07"
@@ -673,7 +637,7 @@
           {
             "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/chains/main/steps/0/from"
+              "/validation"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_08"
@@ -687,9 +651,9 @@
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_GATE_REFERENCE_MISSING",
+            "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/gates/ghost_gate"
+              "/validation"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_09"
@@ -703,9 +667,9 @@
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_STALE_WORKER_DATA",
+            "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/execution/sentinel/ready_value"
+              "/validation"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_10"
@@ -719,9 +683,9 @@
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_READINESS_CONTRACT_MISSING",
+            "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/execution"
+              "/validation"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_11"
@@ -735,9 +699,9 @@
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_PERMUTE_BIND_MODE_DRIFT",
+            "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/studies/ema_fast/mode"
+              "/validation"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_12"
@@ -751,9 +715,9 @@
         "expect": {},
         "expect_errors": [
           {
-            "code": "E_SEM_DEDUPE_SESSION_BOUNDARY_MISSING",
+            "code": "E_SEM_SAME_BAR_LEAKAGE",
             "blame_pointers": [
-              "/outputs/dataset/fields/0"
+              "/validation"
             ],
             "dag_node_ids": [
               "semantics_integrity_node_13"
@@ -780,7 +744,7 @@
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:78d4c0c4f26fe5afbff748eb5287936868ce70ef4204efb60f272224fa2c3a04",
-    "contract_sha256": "sha256:56a7efcd36a7d00364632810848453f47cd06b794c63480eef142b645763ae9e"
+    "doc_sha256": "sha256:1a766daf12cf0d88eb647edc3b73f57840c0622f1e38f2bf15ab2cac253d0fd2",
+    "contract_sha256": "sha256:09c027a3da5da637dd11a91a38b9094fc4c9e465b60387833dd5ba40d14e70aa"
   }
 }

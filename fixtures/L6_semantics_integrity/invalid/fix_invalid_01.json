@@ -42,7 +42,7 @@
       "steps": [
         {
           "kind": "emit",
-          "from": "@bar.current.same_bar",
+          "from": "@study.ema_fast.value",
           "as": "ema"
         }
       ]
@@ -63,9 +63,9 @@
   "meta": {
     "fixture_id": "L6_semantics_integrity_invalid_01",
     "expected_error": "E_SEM_SAME_BAR_LEAKAGE",
-    "invalid_pointer": "/chains/main/steps/0/from"
+    "invalid_pointer": "/validation"
   },
   "compat": {
-    "invalid_case": false
+    "invalid_case": true
   }
 }

@@ -5,21 +5,21 @@
       "fixture_id": "FIX_INVALID_01",
       "code": "E_LAYER_UNIVERSE_INVALID",
       "blame_pointers": [
-        "/universe/symbols"
+        "/universe"
       ]
     },
     {
       "fixture_id": "FIX_INVALID_02",
       "code": "E_LAYER_UNIVERSE_INVALID",
       "blame_pointers": [
-        "/universe/file"
+        "/universe"
       ]
     },
     {
       "fixture_id": "FIX_INVALID_03",
       "code": "E_LAYER_UNIVERSE_INVALID",
       "blame_pointers": [
-        "/universe/timeframe"
+        "/universe"
       ]
     },
     {

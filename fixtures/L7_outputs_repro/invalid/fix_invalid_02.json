@@ -24,9 +24,6 @@
     "backend": {
       "type": "sierra_chart",
       "sierra_chart": {}
-    },
-    "permissions": {
-      "allow_filesystem_write": false
     }
   },
   "studies": {
@@ -66,9 +63,9 @@
   "meta": {
     "fixture_id": "L7_outputs_repro_invalid_02",
     "expected_error": "E_IO_OUTPUT_CONFIG_INVALID",
-    "invalid_pointer": "/execution/permissions/allow_filesystem_write"
+    "invalid_pointer": "/outputs"
   },
   "compat": {
-    "invalid_case": false
+    "invalid_case": true
   }
 }

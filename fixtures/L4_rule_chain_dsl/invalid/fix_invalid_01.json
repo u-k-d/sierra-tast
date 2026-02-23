@@ -37,7 +37,17 @@
       }
     }
   },
-  "chains": {},
+  "chains": {
+    "main": {
+      "steps": [
+        {
+          "kind": "emit",
+          "from": "@study.ema_fast.value",
+          "as": "ema"
+        }
+      ]
+    }
+  },
   "outputs": {
     "dataset": {
       "format": "csv",
@@ -56,6 +66,6 @@
     "invalid_pointer": "/chains"
   },
   "compat": {
-    "invalid_case": false
+    "invalid_case": true
   }
 }

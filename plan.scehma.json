@@ -1,0 +1,384 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/sierra-research-engine/plan.scehma.json",
+  "title": "SRE Plan Creation Spec (Authoring Guide + Validator Wrapper)",
+  "description": "Authoring reference for Sierra Research Engine plan creation. Validation behavior is inherited from schema/plan.bundle.schema.json. This file adds practical guidance on supported functionality and runtime semantics.",
+  "allOf": [
+    {
+      "$ref": "./schema/plan.bundle.schema.json"
+    }
+  ],
+  "x_plan_creation_spec": {
+    "system_profile": {
+      "product": "Sierra Research Engine",
+      "plan_kind": "sierra_research_engine.plan",
+      "schema_version_required": 262,
+      "validator_source_of_truth": "schema/plan.bundle.schema.json",
+      "notes": [
+        "This is an additive authoring guide wrapper.",
+        "If this guide conflicts with runtime behavior, runtime + schema/plan.bundle.schema.json are authoritative."
+      ]
+    },
+    "hard_compatibility_rules": [
+      "If execution.layer2 is absent or disabled, Layer2 DAG/event emission is skipped and legacy behavior remains.",
+      "If outputs.dataset.source is absent, it defaults to bars.",
+      "If outputs.layer3.mode is absent or rr_menu, rr_menu path is preserved.",
+      "New behavior is opt-in through explicit plan fields."
+    ],
+    "top_level_blocks": [
+      {
+        "name": "version",
+        "required": true,
+        "type": "integer",
+        "expected": 262
+      },
+      {
+        "name": "plan_kind",
+        "required": true,
+        "type": "string",
+        "expected": "sierra_research_engine.plan"
+      },
+      {
+        "name": "plan_io",
+        "required": true,
+        "type": "object",
+        "key_fields": [
+          "format",
+          "encoding",
+          "allow_comments",
+          "max_bytes"
+        ]
+      },
+      {
+        "name": "universe",
+        "required": true,
+        "type": "object",
+        "key_fields": [
+          "source",
+          "symbols|file",
+          "timeframe",
+          "date_range"
+        ]
+      },
+      {
+        "name": "execution",
+        "required": true,
+        "type": "object",
+        "key_fields": [
+          "worker_charts",
+          "backend",
+          "permissions",
+          "sentinel",
+          "layer2"
+        ]
+      },
+      {
+        "name": "studies",
+        "required": true,
+        "type": "object",
+        "key_fields": [
+          "mode",
+          "study_id",
+          "outputs"
+        ]
+      },
+      {
+        "name": "chains",
+        "required": true,
+        "type": "object",
+        "key_fields": [
+          "steps"
+        ]
+      },
+      {
+        "name": "outputs",
+        "required": true,
+        "type": "object",
+        "key_fields": [
+          "dataset",
+          "artifacts",
+          "layer3"
+        ]
+      }
+    ],
+    "layered_feature_map": [
+      {
+        "layer_id": "L0_core_identity_io",
+        "focus": "Plan identity/version/io/meta/compat/extensions"
+      },
+      {
+        "layer_id": "L1_universe_data",
+        "focus": "Universe source, symbols/file, timeframe, date range"
+      },
+      {
+        "layer_id": "L2_sierra_runtime_topology",
+        "focus": "Controller/worker chart topology, readiness, strict symbol resolution"
+      },
+      {
+        "layer_id": "L3_studies_features",
+        "focus": "Study binding and output mapping"
+      },
+      {
+        "layer_id": "L4_rule_chain_dsl",
+        "focus": "Chains/steps/refs and gate wiring"
+      },
+      {
+        "layer_id": "L5_experimentation_permute",
+        "focus": "Parameter permutations (study_input/rule_param/symbol)"
+      },
+      {
+        "layer_id": "L6_semantics_integrity",
+        "focus": "Leakage/staleness/dedupe/mutation drift checks"
+      },
+      {
+        "layer_id": "L7_outputs_repro",
+        "focus": "Dataset + artifact emission and runtime determinism checks"
+      },
+      {
+        "layer_id": "L8_governance_evolution",
+        "focus": "Capabilities/deprecations/ADR DAG evolution metadata"
+      }
+    ],
+    "dataset_authoring": {
+      "source_values": [
+        "bars",
+        "layer2_event_emitter"
+      ],
+      "bars_source": {
+        "intent": "Legacy bar-level dataset path",
+        "supported_refs": [
+          "@symbol",
+          "literal strings/numbers"
+        ],
+        "notes": [
+          "Do not assume all @bar.* and @study.* are supported in every runtime path unless implemented there."
+        ]
+      },
+      "layer2_event_emitter_source": {
+        "intent": "Use Layer2 event rows as authoritative dataset rows",
+        "required_ref_scope": "@event.* only in outputs.dataset.fields[*].ref/from",
+        "required_coverage": "Every @event.<col> in dataset fields must be emitted by execution.layer2.event_emitter.emit_columns or provided implicitly (symbol, bar_index).",
+        "required_fields_for_layer3_bucket_eval": [
+          "bar_index",
+          "entry_price",
+          "feature columns used by bucketing dimensions"
+        ],
+        "failure_diagnostics": [
+          "E_DATASET_REF_SCOPE_MISMATCH / CHK_DATASET_REF_SCOPE_MISMATCH",
+          "E_EVENT_EMITTER_MISSING_COLUMN / CHK_EVENT_EMITTER_COVERS_DATASET_FIELDS"
+        ]
+      }
+    },
+    "layer2_execution": {
+      "enablement": "/execution/layer2/enabled == true",
+      "dag_nodes_supported": [
+        "param",
+        "bar_field",
+        "study_ref",
+        "op"
+      ],
+      "op_kinds_supported": [
+        "sma",
+        "ema",
+        "atr",
+        "roc",
+        "diff",
+        "add",
+        "sub",
+        "mul",
+        "div",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "eq",
+        "neq",
+        "and",
+        "or",
+        "not",
+        "abs",
+        "clip"
+      ],
+      "event_emitter": {
+        "fields": [
+          "trigger_node",
+          "emit_mode (on_true_edge|on_true)",
+          "cooldown_bars",
+          "emit_columns"
+        ],
+        "emit_column_bindings": "Each emit column must bind by ref or node."
+      },
+      "date_range_enforcement": {
+        "rule": "Layer2 authoritative emission must respect universe.date_range when enabled.",
+        "failure_diagnostic": "E_L2_DATE_RANGE_VIOLATION / CHK_DATE_RANGE_ENFORCED_IN_L2"
+      },
+      "integrity_diagnostics": [
+        "E_L2_DAG_CYCLE",
+        "E_L2_MISSING_NODE_DEP",
+        "E_L2_UNKNOWN_NODE_KIND"
+      ]
+    },
+    "layer3_augmentation": {
+      "modes": [
+        "rr_menu",
+        "bucket_eval"
+      ],
+      "rr_menu_mode": {
+        "purpose": "Legacy risk/reward bucket menu artifacts",
+        "compatibility": "Kept for backward compatibility when mode is absent or rr_menu."
+      },
+      "bucket_eval_mode": {
+        "enablement": "outputs.layer3.mode == bucket_eval AND outcomes.enabled == true AND bucketing.dimensions present",
+        "input_csv": "outputs.layer3.inputs.layer2_authoritative_csv",
+        "required_event_fields": [
+          "bar_index",
+          "entry_price_field",
+          "bucketing dimension fields"
+        ],
+        "outcomes": {
+          "horizon": "horizon.value (single) or horizons_bars[] (multi)",
+          "sides": [
+            "long",
+            "short"
+          ],
+          "no_same_bar_overlap": "Outcomes use bars t+1..t+H only.",
+          "failure_diagnostic": "E_L3_OUTCOME_LEAKAGE_SAME_BAR"
+        },
+        "metrics": [
+          "n_trades",
+          "EV",
+          "mfe/mfa percentiles"
+        ],
+        "bucket_limits": [
+          "<field>_min",
+          "<field>_max",
+          "<field>_lo",
+          "<field>_hi"
+        ],
+        "eligibility": {
+          "rules": "outputs.layer3.eligibility.rules[] apply per bucket context.",
+          "ops": [
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "==",
+            "!=",
+            "not_null",
+            "is_null"
+          ]
+        }
+      }
+    },
+    "runtime_determinism_controls": {
+      "symbol_resolution_strict": {
+        "pointer": "/execution/backend/sierra_chart/layout_contract/readiness/symbol_resolution_strict",
+        "type": "boolean",
+        "default": false,
+        "behavior": {
+          "false": "Missing symbol->chart mapping is warning-level where applicable.",
+          "true": "Missing symbol->chart mapping becomes error-level deterministic failure."
+        },
+        "diagnostics": [
+          "CHK_SYMBOL_CHART_RESOLUTION_STRICT",
+          "E_RUN_SYMBOL_CHART_NOT_FOUND (warn path)",
+          "E_RUN_SYMBOL_CHART_NOT_FOUND_STRICT (strict error path)"
+        ]
+      }
+    },
+    "artifact_outputs": {
+      "dataset": "outputs.dataset.path",
+      "layer3": [
+        "outputs.layer3.artifacts.rr_buckets",
+        "outputs.layer3.artifacts.decision_audit",
+        "outputs.layer3.artifacts.outcomes_per_event",
+        "outputs.layer3.artifacts.bucket_stats"
+      ],
+      "meta_artifacts": [
+        "execution_dag.json",
+        "lineage_dag.json",
+        "run_manifest.json",
+        "metrics_summary.json"
+      ]
+    },
+    "authoring_templates": {
+      "minimal_legacy_dataset_bars": {
+        "version": 262,
+        "plan_kind": "sierra_research_engine.plan",
+        "plan_io": {
+          "format": "json"
+        },
+        "universe": {
+          "source": "inline",
+          "symbols": [
+            "ES"
+          ]
+        },
+        "execution": {
+          "worker_charts": [
+            2
+          ],
+          "backend": {
+            "type": "sierra_chart",
+            "sierra_chart": {}
+          }
+        },
+        "studies": {
+          "ema_fast": {
+            "mode": "managed",
+            "study_id": 1,
+            "outputs": {
+              "value": {
+                "subgraph": 0
+              }
+            }
+          }
+        },
+        "chains": {
+          "main": {
+            "steps": [
+              {
+                "kind": "emit",
+                "from": "@study.ema_fast.value",
+                "as": "ema"
+              }
+            ]
+          }
+        },
+        "outputs": {
+          "dataset": {
+            "format": "csv",
+            "path": "artifacts/{symbol}/dataset.csv",
+            "fields": [
+              {
+                "name": "symbol",
+                "ref": "@symbol"
+              }
+            ]
+          }
+        }
+      },
+      "minimal_layer2_event_dataset": {
+        "outputs": {
+          "dataset": {
+            "source": "layer2_event_emitter",
+            "fields": [
+              {
+                "name": "symbol",
+                "ref": "@event.symbol"
+              },
+              {
+                "name": "bar_index",
+                "ref": "@event.bar_index"
+              },
+              {
+                "name": "entry_price",
+                "ref": "@event.entry_price"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

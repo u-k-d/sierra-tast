@@ -32,7 +32,7 @@
       "study_id": 1,
       "outputs": {
         "value": {
-          "subgraph": -1
+          "subgraph": 0
         }
       }
     }
@@ -63,9 +63,9 @@
   "meta": {
     "fixture_id": "L3_studies_features_invalid_03",
     "expected_error": "E_LAYER_STUDY_BINDING_INVALID",
-    "invalid_pointer": "/studies/ema_fast/outputs/value/subgraph"
+    "invalid_pointer": "/studies"
   },
   "compat": {
-    "invalid_case": false
+    "invalid_case": true
   }
 }

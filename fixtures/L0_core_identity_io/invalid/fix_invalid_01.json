@@ -1,5 +1,5 @@
 {
-  "version": 261,
+  "version": 262,
   "plan_kind": "sierra_research_engine.plan",
   "plan_io": {
     "format": "json",
@@ -66,6 +66,6 @@
     "invalid_pointer": "/version"
   },
   "compat": {
-    "invalid_case": false
+    "invalid_case": true
   }
 }

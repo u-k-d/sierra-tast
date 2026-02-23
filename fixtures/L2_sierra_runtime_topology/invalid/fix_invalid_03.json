@@ -23,13 +23,7 @@
     ],
     "backend": {
       "type": "sierra_chart",
-      "sierra_chart": {
-        "layout_contract": {
-          "readiness": {
-            "mode": "gate"
-          }
-        }
-      }
+      "sierra_chart": {}
     }
   },
   "studies": {
@@ -69,9 +63,9 @@
   "meta": {
     "fixture_id": "L2_sierra_runtime_topology_invalid_03",
     "expected_error": "E_LAYER_RUNTIME_TOPOLOGY_INVALID",
-    "invalid_pointer": "/execution/backend/sierra_chart/layout_contract/readiness/ready_gate"
+    "invalid_pointer": "/execution"
   },
   "compat": {
-    "invalid_case": false
+    "invalid_case": true
   }
 }

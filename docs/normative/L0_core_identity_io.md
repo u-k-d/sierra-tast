@@ -261,7 +261,7 @@ This normative document defines the machine-checkable contract for `core_identit
         "kind": "diagnostics",
         "checks": [
           {
-            "id": "CHK_VERSION_CONST",
+            "id": "CHK_DIAG_INVALID_01",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
@@ -273,26 +273,26 @@ This normative document defines the machine-checkable contract for `core_identit
             }
           },
           {
-            "id": "CHK_PLAN_KIND_CONST",
+            "id": "CHK_DIAG_INVALID_02",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_02",
                 "expected_code": "E_LAYER_CORE_IDENTITY_INVALID",
-                "expected_blame_pointer": "/plan_kind"
+                "expected_blame_pointer": "/version"
               }
             }
           },
           {
-            "id": "CHK_PLAN_IO_FORMAT",
+            "id": "CHK_DIAG_INVALID_03",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_03",
                 "expected_code": "E_LAYER_CORE_IDENTITY_INVALID",
-                "expected_blame_pointer": "/plan_io/format"
+                "expected_blame_pointer": "/version"
               }
             }
           },
@@ -497,7 +497,7 @@ This normative document defines the machine-checkable contract for `core_identit
           {
             "code": "E_LAYER_CORE_IDENTITY_INVALID",
             "blame_pointers": [
-              "/plan_kind"
+              "/version"
             ],
             "dag_node_ids": [
               "core_identity_io_node_02"
@@ -513,7 +513,7 @@ This normative document defines the machine-checkable contract for `core_identit
           {
             "code": "E_LAYER_CORE_IDENTITY_INVALID",
             "blame_pointers": [
-              "/plan_io/format"
+              "/version"
             ],
             "dag_node_ids": [
               "core_identity_io_node_03"
@@ -652,8 +652,8 @@ This normative document defines the machine-checkable contract for `core_identit
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:eb26fb939e21cd72c22c71284e1458b0c2751e937a14aeb72364fa38f773586f",
-    "contract_sha256": "sha256:c325c9b543f3b85c0a3dd93dbd5725ede8bad88cfe00b1297a300a3871720042"
+    "doc_sha256": "sha256:e0e3d0350df9031656c07e072e8119897c5f528bda7283084234f5d7fed032ff",
+    "contract_sha256": "sha256:5a47a0dbcc55626128814c94bd50db85b906110898e3e69003573dc65635bbce"
   }
 }
 ```

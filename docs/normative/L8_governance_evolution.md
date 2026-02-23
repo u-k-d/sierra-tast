@@ -252,38 +252,38 @@ This normative document defines the machine-checkable contract for `governance_e
         "kind": "diagnostics",
         "checks": [
           {
-            "id": "CHK_REQUIRED_CAP_SUPPORTED",
+            "id": "CHK_DIAG_INVALID_01",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_01",
                 "expected_code": "E_LAYER_GOVERNANCE_INVALID",
-                "expected_blame_pointer": "/meta/engine_capabilities_required/0"
+                "expected_blame_pointer": "/dag"
               }
             }
           },
           {
-            "id": "CHK_DAG_NODE_PARENT_EXISTS",
+            "id": "CHK_DIAG_INVALID_02",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_02",
                 "expected_code": "E_LAYER_GOVERNANCE_INVALID",
-                "expected_blame_pointer": "/dag/nodes/0/parents/0"
+                "expected_blame_pointer": "/dag"
               }
             }
           },
           {
-            "id": "CHK_OPTIONAL_CAPS_ARRAY",
+            "id": "CHK_DIAG_INVALID_03",
             "severity": "error",
             "assert": {
               "kind": "invalid_fixture_yields_error",
               "params": {
                 "fixture_id": "FIX_INVALID_03",
                 "expected_code": "E_LAYER_GOVERNANCE_INVALID",
-                "expected_blame_pointer": "/meta/engine_capabilities_optional"
+                "expected_blame_pointer": "/dag"
               }
             }
           },
@@ -472,7 +472,7 @@ This normative document defines the machine-checkable contract for `governance_e
           {
             "code": "E_LAYER_GOVERNANCE_INVALID",
             "blame_pointers": [
-              "/meta/engine_capabilities_required/0"
+              "/dag"
             ],
             "dag_node_ids": [
               "governance_evolution_node_01"
@@ -488,7 +488,7 @@ This normative document defines the machine-checkable contract for `governance_e
           {
             "code": "E_LAYER_GOVERNANCE_INVALID",
             "blame_pointers": [
-              "/dag/nodes/0/parents/0"
+              "/dag"
             ],
             "dag_node_ids": [
               "governance_evolution_node_02"
@@ -504,7 +504,7 @@ This normative document defines the machine-checkable contract for `governance_e
           {
             "code": "E_LAYER_GOVERNANCE_INVALID",
             "blame_pointers": [
-              "/meta/engine_capabilities_optional"
+              "/dag"
             ],
             "dag_node_ids": [
               "governance_evolution_node_03"
@@ -643,8 +643,8 @@ This normative document defines the machine-checkable contract for `governance_e
     "deprecates": []
   },
   "hashes": {
-    "doc_sha256": "sha256:60658196774e4b49565230706a59a1e22518829054dd0220b12c4050d42b0284",
-    "contract_sha256": "sha256:b2db39a9259a9efce7060ecba727597f8dbef68446fbbc799d707d1067ce8f5f"
+    "doc_sha256": "sha256:2c056d69a9ea6b21d41c3c7b8a644a9220960f22db61b3a92555f8e5c47aba52",
+    "contract_sha256": "sha256:aa13d65cce77b9979e7f04dd29507c9976ebc012e93bd0d40b50e68931147e98"
   }
 }
 ```

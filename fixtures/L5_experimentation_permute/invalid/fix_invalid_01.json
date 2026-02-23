@@ -63,20 +63,9 @@
   "meta": {
     "fixture_id": "L5_experimentation_permute_invalid_01",
     "expected_error": "E_LAYER_PERMUTE_INVALID",
-    "invalid_pointer": "/parameters/permute/0/kind"
-  },
-  "parameters": {
-    "permute": [
-      {
-        "id": "p1",
-        "values": [
-          1,
-          2
-        ]
-      }
-    ]
+    "invalid_pointer": "/parameters"
   },
   "compat": {
-    "invalid_case": false
+    "invalid_case": true
   }
 }
