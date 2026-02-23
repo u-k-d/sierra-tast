@@ -23,7 +23,7 @@ def main() -> int:
     original = L4_MANIFEST.read_text(encoding="utf-8")
     try:
         narrowed = json.loads(original)
-        owned = ["/chains", "/signals", "/gates"]
+        owned = ["/signals", "/gates"]
         narrowed["schema_scope"]["owned_pointers"] = owned
         for node in narrowed.get("ast_nodes", []):
             for inv in node.get("invariants", []):

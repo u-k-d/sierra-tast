@@ -55,6 +55,13 @@ def main() -> int:
 
     c2 = json.loads(json.dumps(base))
     c2.setdefault("execution", {})["permissions"] = {"allow_filesystem_write": True}
+    c2.setdefault("outputs", {})["dataset"] = {
+        "format": "csv",
+        "path": "out/governance_output_permission_allowed.csv",
+        "fields": [
+            {"id": "symbol", "from": "@symbol"},
+        ],
+    }
     rc, diags = run_plan(c2, "output_permission_allowed")
     if rc != 0:
         failures.append("output_permission_allowed should pass")

@@ -27,16 +27,7 @@ Status ValidateRuleChainDsl(const ScopedPlanView& plan_view, DiagnosticSink& dia
 
   const auto* chains = plan_view.Get("/chains");
   bool require_gates_exist = true;
-  const auto* require_gates = plan_view.Get("/validation/require_gates_exist");
-  if (require_gates && require_gates->IsBool()) {
-    require_gates_exist = require_gates->AsBool();
-  }
-
   bool prefer_typed_refs = true;
-  const auto* prefer_typed = plan_view.Get("/validation/prefer_typed_step_io_refs");
-  if (prefer_typed && prefer_typed->IsBool()) {
-    prefer_typed_refs = prefer_typed->AsBool();
-  }
 
   std::set<std::string> gate_ids;
   const auto* gates = plan_view.Get("/gates");
@@ -156,19 +147,6 @@ Status ValidateRuleChainDsl(const ScopedPlanView& plan_view, DiagnosticSink& dia
         if (as_it != sf.end() && as_it->second.IsString() && !as_it->second.AsString().empty()) {
           produced_step_aliases.insert(as_it->second.AsString());
         }
-      }
-    }
-  }
-
-  const auto* execution_mode = plan_view.Get("/execution/backend/sierra_chart/layout_contract/readiness/mode");
-  if (execution_mode && execution_mode->IsString() && execution_mode->AsString() == "gate") {
-    const auto* ready_gate = plan_view.Get("/execution/backend/sierra_chart/layout_contract/readiness/ready_gate");
-    if (!ready_gate || !ready_gate->IsString() || ready_gate->AsString().rfind("@gate.", 0) != 0) {
-      emit("CHK_READY_GATE_FORMAT", "ready_gate must be @gate.<id> when readiness.mode=gate.", "@gate.<id>", TypeOf(ready_gate), "/execution/backend/sierra_chart/layout_contract/readiness/ready_gate");
-    } else {
-      const std::string gate_id = ready_gate->AsString().substr(6);
-      if (!plan_view.Exists("/gates/" + gate_id)) {
-        emit("CHK_READY_GATE_EXISTS", "ready_gate reference must exist in /gates.", "existing gate id", gate_id, "/gates/" + gate_id);
       }
     }
   }
