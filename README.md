@@ -27,12 +27,17 @@ Each diagnostic includes:
 - `blame_pointers`: JSON pointers to the failing plan fields.
 - `severity`: `error` blocks execution; `warn` is informational.
 
-## Current strict runtime behavior
-`sre_planlint` is strict about unimplemented runtime execution paths:
-- If a plan requests output materialization that depends on unimplemented runtime refs (for example `@bar.*`, `@study.*`, `@step.*`) it emits `E_NOT_IMPLEMENTED`.
-- If `outputs.layer3.enabled=true`, runtime emits `E_NOT_IMPLEMENTED` until Layer3 execution is implemented.
+## Runtime behavior
+`sre_planlint` now supports additive opt-in augmentation paths:
+- `outputs.dataset.source="layer2_event_emitter"` runs `execution.layer2` indicator DAG evaluation and event emission.
+- Layer2 DAG invariants emit stable errors: `E_L2_DAG_CYCLE`, `E_L2_MISSING_NODE_DEP`, `E_L2_UNKNOWN_NODE_KIND`.
+- When Layer3 outcomes/bucketing/metrics blocks are configured, runtime emits `outcomes_per_event` and `bucket_stats`.
+- Same-bar leakage in Layer3 outcomes emits `E_L3_OUTCOME_LEAKAGE_SAME_BAR`.
 
-This is intentional to prevent placeholder or synthetic output data.
+Legacy behavior remains unchanged by default:
+- If `execution.layer2` is absent, legacy dataset emission behavior is used.
+- If `outputs.dataset.source` is absent, it defaults to `bars`.
+- `outputs.layer3` with only legacy `rr_menu` settings remains on the existing not-implemented runtime path (`E_NOT_IMPLEMENTED`).
 
 ## Optional contract checks
 Run supporting checks used in this repo:

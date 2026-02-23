@@ -1,0 +1,161 @@
+{
+  "version": 262,
+  "plan_kind": "sierra_research_engine.plan",
+  "plan_io": {
+    "format": "json",
+    "encoding": "utf-8"
+  },
+  "universe": {
+    "source": "inline",
+    "symbols": [
+      "ES",
+      "NQ"
+    ],
+    "timeframe": "5m",
+    "date_range": {
+      "start": "2025-01-01",
+      "end": "2025-01-31"
+    }
+  },
+  "execution": {
+    "worker_charts": [
+      2
+    ],
+    "permissions": {
+      "allow_filesystem_write": true
+    },
+    "backend": {
+      "type": "sierra_chart",
+      "sierra_chart": {}
+    },
+    "layer2": {
+      "enabled": true,
+      "mode": "authoritative_events",
+      "bar_basis": "close",
+      "require_final_bar": true,
+      "align": {
+        "mode": "last_completed"
+      },
+      "indicator_dag": {
+        "nodes": {
+          "close_n": {
+            "kind": "bar_field",
+            "field": "close"
+          },
+          "sma_n": {
+            "kind": "sma",
+            "inputs": [
+              "close_n"
+            ],
+            "window_bars": 4
+          },
+          "threshold_n": {
+            "kind": "param",
+            "type": "float",
+            "value": 45.0
+          },
+          "cond_n": {
+            "kind": "gt",
+            "inputs": [
+              "sma_n",
+              "threshold_n"
+            ]
+          },
+          "study_n": {
+            "kind": "study_ref",
+            "ref": "@study.ema_fast.value"
+          },
+          "trigger_n": {
+            "kind": "and",
+            "inputs": [
+              "cond_n",
+              "cond_n"
+            ]
+          }
+        }
+      },
+      "event_emitter": {
+        "trigger_node": "trigger_n",
+        "emit_mode": "on_true_edge",
+        "cooldown_bars": 0,
+        "emit_columns": [
+          {
+            "name": "signal",
+            "type": "bool",
+            "node": "trigger_n"
+          },
+          {
+            "name": "entry_price",
+            "type": "float",
+            "ref": "@bar.close"
+          },
+          {
+            "name": "bar_datetime",
+            "type": "datetime",
+            "ref": "@bar.datetime"
+          }
+        ]
+      }
+    }
+  },
+  "studies": {
+    "ema_fast": {
+      "mode": "managed",
+      "study_id": 1,
+      "outputs": {
+        "value": {
+          "subgraph": 0
+        }
+      }
+    }
+  },
+  "chains": {
+    "main": {
+      "steps": [
+        {
+          "kind": "emit",
+          "from": "@study.ema_fast.value",
+          "as": "ema"
+        }
+      ]
+    }
+  },
+  "outputs": {
+    "dataset": {
+      "format": "csv",
+      "path": "__TMP__/l2/{symbol}/authoritative.csv",
+      "source": "layer2_event_emitter",
+      "fields": [
+        {
+          "name": "symbol",
+          "ref": "@event.symbol"
+        },
+        {
+          "name": "bar_index",
+          "ref": "@event.bar_index"
+        },
+        {
+          "name": "entry_price",
+          "ref": "@event.entry_price"
+        },
+        {
+          "name": "signal",
+          "ref": "@event.signal"
+        },
+        {
+          "name": "bar_datetime",
+          "ref": "@event.bar_datetime"
+        }
+      ]
+    },
+    "artifacts": {
+      "enabled": true,
+      "base_dir": "__TMP__/meta",
+      "write_run_manifest": true,
+      "write_metrics_summary": true
+    }
+  },
+  "meta": {
+    "fixture_id": "augmentation_l2_valid_event_emission"
+  }
+}

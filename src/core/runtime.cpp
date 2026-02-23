@@ -4,8 +4,11 @@
 #include <array>
 #include <cctype>
 #include <cstdint>
+#include <cmath>
+#include <deque>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -1018,6 +1021,7 @@ std::vector<std::string> PlanUniverseSymbols(const JsonValue& plan) {
 struct DatasetFieldSpec {
   std::string name;
   std::string source_ref;
+  std::string source_pointer;
 };
 
 std::vector<DatasetFieldSpec> DatasetFieldsFromPlan(const JsonValue& plan) {
@@ -1048,8 +1052,10 @@ std::vector<DatasetFieldSpec> DatasetFieldsFromPlan(const JsonValue& plan) {
 
     if (ref && ref->IsString()) {
       spec.source_ref = ref->AsString();
+      spec.source_pointer = "/outputs/dataset/fields/" + std::to_string(i) + "/ref";
     } else if (from && from->IsString()) {
       spec.source_ref = from->AsString();
+      spec.source_pointer = "/outputs/dataset/fields/" + std::to_string(i) + "/from";
     }
 
     fields.push_back(std::move(spec));
@@ -1057,7 +1063,83 @@ std::vector<DatasetFieldSpec> DatasetFieldsFromPlan(const JsonValue& plan) {
   return fields;
 }
 
-bool IsImplementedDatasetRuntimeRef(std::string_view source_ref) {
+std::string FormatNumber(double value) {
+  std::ostringstream oss;
+  oss << std::fixed << std::setprecision(8) << value;
+  std::string out = oss.str();
+  while (!out.empty() && out.back() == '0') {
+    out.pop_back();
+  }
+  if (!out.empty() && out.back() == '.') {
+    out.pop_back();
+  }
+  if (out == "-0") {
+    return "0";
+  }
+  return out.empty() ? "0" : out;
+}
+
+bool ParseDoubleStrict(std::string_view text, double& out) {
+  if (text.empty()) {
+    return false;
+  }
+  try {
+    size_t pos = 0;
+    const std::string s(text);
+    out = std::stod(s, &pos);
+    return pos == s.size();
+  } catch (...) {
+    return false;
+  }
+}
+
+bool ParseIntStrict(std::string_view text, int& out) {
+  if (text.empty()) {
+    return false;
+  }
+  try {
+    size_t pos = 0;
+    const std::string s(text);
+    const long v = std::stol(s, &pos, 10);
+    if (pos != s.size()) {
+      return false;
+    }
+    if (v < std::numeric_limits<int>::min() || v > std::numeric_limits<int>::max()) {
+      return false;
+    }
+    out = static_cast<int>(v);
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+std::string JsonTypeName(const JsonValue* value) { return value ? value->TypeName() : "missing"; }
+
+void EmitRuntimeFeatureError(
+    sre::layers::DiagnosticSink& sink,
+    std::string code,
+    std::string check_id,
+    std::string reason,
+    std::string expected,
+    std::string actual,
+    std::string pointer,
+    std::string remediation) {
+  sre::layers::EmitLayerError(
+      sink,
+      "outputs_repro",
+      std::move(code),
+      std::move(check_id),
+      "CHKGRP_PLAN_AST_SHAPE",
+      std::move(reason),
+      std::move(expected),
+      std::move(actual),
+      {std::move(pointer)},
+      std::move(remediation),
+      "runtime");
+}
+
+bool IsImplementedDatasetRuntimeRefForBars(std::string_view source_ref) {
   if (source_ref.empty()) {
     return true;
   }
@@ -1065,6 +1147,17 @@ bool IsImplementedDatasetRuntimeRef(std::string_view source_ref) {
     return true;
   }
   return source_ref == "@symbol";
+}
+
+std::string DatasetSourceFromPlan(const JsonValue& plan) {
+  return JsonStringAt(plan, "/outputs/dataset/source", "bars");
+}
+
+bool Layer3AugmentationRequested(const JsonValue& plan) {
+  return sre::PointerExists(plan, "/outputs/layer3/outcomes") || sre::PointerExists(plan, "/outputs/layer3/bucketing") ||
+         sre::PointerExists(plan, "/outputs/layer3/metrics") ||
+         sre::PointerExists(plan, "/outputs/layer3/artifacts/outcomes_per_event") ||
+         sre::PointerExists(plan, "/outputs/layer3/artifacts/bucket_stats");
 }
 
 bool AppendArtifactEmissionNotImplementedDiagnostics(const JsonValue& plan, sre::layers::DiagnosticSink& sink) {
@@ -1085,37 +1178,46 @@ bool AppendArtifactEmissionNotImplementedDiagnostics(const JsonValue& plan, sre:
     ok = false;
   };
 
-  const auto* field_array = sre::ResolvePointer(plan, "/outputs/dataset/fields");
-  if (field_array && field_array->IsArray()) {
-    for (size_t i = 0; i < field_array->AsArray().items.size(); ++i) {
-      const auto& field = field_array->AsArray().items[i];
-      if (!field.IsObject()) {
-        continue;
-      }
-      const auto* ref = ObjectGet(field, "ref");
-      const auto* from = ObjectGet(field, "from");
-      if (ref && ref->IsString() && !IsImplementedDatasetRuntimeRef(ref->AsString())) {
-        emit(
-            "CHK_RUNTIME_DATASET_REF_NOT_IMPLEMENTED",
-            "Dataset field reference is declared but runtime execution is not implemented.",
-            ref->AsString(),
-            "/outputs/dataset/fields/" + std::to_string(i) + "/ref");
-      }
-      if (from && from->IsString() && !IsImplementedDatasetRuntimeRef(from->AsString())) {
-        emit(
-            "CHK_RUNTIME_DATASET_REF_NOT_IMPLEMENTED",
-            "Dataset field source is declared but runtime execution is not implemented.",
-            from->AsString(),
-            "/outputs/dataset/fields/" + std::to_string(i) + "/from");
+  const std::string dataset_source = DatasetSourceFromPlan(plan);
+  if (dataset_source == "bars") {
+    const auto* field_array = sre::ResolvePointer(plan, "/outputs/dataset/fields");
+    if (field_array && field_array->IsArray()) {
+      for (size_t i = 0; i < field_array->AsArray().items.size(); ++i) {
+        const auto& field = field_array->AsArray().items[i];
+        if (!field.IsObject()) {
+          continue;
+        }
+        const auto* ref = ObjectGet(field, "ref");
+        const auto* from = ObjectGet(field, "from");
+        if (ref && ref->IsString() && !IsImplementedDatasetRuntimeRefForBars(ref->AsString())) {
+          emit(
+              "CHK_RUNTIME_DATASET_REF_NOT_IMPLEMENTED",
+              "Dataset field reference is declared but runtime execution is not implemented for bars source.",
+              ref->AsString(),
+              "/outputs/dataset/fields/" + std::to_string(i) + "/ref");
+        }
+        if (from && from->IsString() && !IsImplementedDatasetRuntimeRefForBars(from->AsString())) {
+          emit(
+              "CHK_RUNTIME_DATASET_REF_NOT_IMPLEMENTED",
+              "Dataset field source is declared but runtime execution is not implemented for bars source.",
+              from->AsString(),
+              "/outputs/dataset/fields/" + std::to_string(i) + "/from");
+        }
       }
     }
+  } else if (dataset_source != "layer2_event_emitter") {
+    emit(
+        "CHK_RUNTIME_DATASET_SOURCE_NOT_IMPLEMENTED",
+        "Dataset source is unknown to runtime.",
+        dataset_source,
+        "/outputs/dataset/source");
   }
 
   const auto* layer3 = sre::ResolvePointer(plan, "/outputs/layer3");
   if (layer3 && layer3->IsObject()) {
     const auto* enabled = ObjectGet(*layer3, "enabled");
     const bool layer3_enabled = (enabled == nullptr) || !enabled->IsBool() || enabled->AsBool();
-    if (layer3_enabled) {
+    if (layer3_enabled && !Layer3AugmentationRequested(plan)) {
       emit(
           "CHK_RUNTIME_LAYER3_OUTPUT_NOT_IMPLEMENTED",
           "Layer3 output artifact emission is declared but not implemented in runtime.",
@@ -1127,7 +1229,7 @@ bool AppendArtifactEmissionNotImplementedDiagnostics(const JsonValue& plan, sre:
   return ok;
 }
 
-std::string ResolveDatasetValue(std::string_view source_ref, std::string_view symbol) {
+std::string ResolveDatasetValueForBars(std::string_view source_ref, std::string_view symbol) {
   if (source_ref == "@symbol") {
     return std::string(symbol);
   }
@@ -1208,20 +1310,880 @@ void WriteJsonlFile(
   }
 }
 
-void EmitDatasetOutputs(const JsonValue& plan, const std::filesystem::path& repo_root) {
-  const auto* format_v = sre::ResolvePointer(plan, "/outputs/dataset/format");
-  const auto* path_v = sre::ResolvePointer(plan, "/outputs/dataset/path");
-  if (!format_v || !format_v->IsString() || !path_v || !path_v->IsString() || path_v->AsString().empty()) {
-    return;
+std::vector<std::string> ParseCsvLine(std::string_view line) {
+  std::vector<std::string> cells;
+  std::string current;
+  bool in_quotes = false;
+  for (size_t i = 0; i < line.size(); ++i) {
+    const char ch = line[i];
+    if (in_quotes) {
+      if (ch == '"') {
+        if (i + 1 < line.size() && line[i + 1] == '"') {
+          current.push_back('"');
+          ++i;
+        } else {
+          in_quotes = false;
+        }
+      } else {
+        current.push_back(ch);
+      }
+    } else {
+      if (ch == '"') {
+        in_quotes = true;
+      } else if (ch == ',') {
+        cells.push_back(current);
+        current.clear();
+      } else {
+        current.push_back(ch);
+      }
+    }
+  }
+  cells.push_back(current);
+  return cells;
+}
+
+bool ReadCsvFile(const std::filesystem::path& path, std::vector<std::string>& headers, std::vector<std::vector<std::string>>& rows) {
+  std::ifstream in(path);
+  if (!in) {
+    return false;
+  }
+  std::string line;
+  bool first = true;
+  while (std::getline(in, line)) {
+    auto cells = ParseCsvLine(line);
+    if (first) {
+      headers = std::move(cells);
+      first = false;
+      continue;
+    }
+    if (!cells.empty()) {
+      rows.push_back(std::move(cells));
+    }
+  }
+  return !headers.empty();
+}
+
+struct SyntheticBar {
+  double open = 0.0;
+  double high = 0.0;
+  double low = 0.0;
+  double close = 0.0;
+  double volume = 0.0;
+  double vwap = 0.0;
+  std::string datetime;
+};
+
+uint32_t StableSymbolSeed(std::string_view symbol) {
+  uint32_t seed = 2166136261u;
+  for (unsigned char c : symbol) {
+    seed ^= static_cast<uint32_t>(c);
+    seed *= 16777619u;
+  }
+  return seed;
+}
+
+std::vector<SyntheticBar> BuildSyntheticBars(std::string_view symbol, size_t bar_count = 128) {
+  std::vector<SyntheticBar> bars;
+  bars.reserve(bar_count);
+  const uint32_t seed = StableSymbolSeed(symbol);
+  const double base = 40.0 + static_cast<double>(seed % 250) / 5.0;
+
+  for (size_t i = 0; i < bar_count; ++i) {
+    const double trend = static_cast<double>(i) * 0.09;
+    const double wave = std::sin((static_cast<double>(i) + static_cast<double>(seed % 19)) * 0.25) * 0.8;
+    const double close = base + trend + wave;
+    const double open = close - 0.25 + std::cos(static_cast<double>(i) * 0.15) * 0.05;
+    const double high = std::max(open, close) + 0.45 + static_cast<double>((seed + i) % 7) * 0.01;
+    const double low = std::min(open, close) - 0.40 - static_cast<double>((seed + i * 3) % 5) * 0.01;
+    const double volume = 1000.0 + static_cast<double>((seed + i * 17) % 700);
+    const double vwap = (open + high + low + close) / 4.0;
+
+    const int total_minutes = static_cast<int>(i * 5);
+    const int day = 1 + (total_minutes / (24 * 60));
+    const int hour = (total_minutes / 60) % 24;
+    const int minute = total_minutes % 60;
+    std::ostringstream dt;
+    dt << "2025-01-" << std::setw(2) << std::setfill('0') << day << "T" << std::setw(2) << hour << ":" << std::setw(2)
+       << minute << ":00Z";
+
+    bars.push_back(SyntheticBar{
+        .open = open,
+        .high = high,
+        .low = low,
+        .close = close,
+        .volume = volume,
+        .vwap = vwap,
+        .datetime = dt.str(),
+    });
+  }
+  return bars;
+}
+
+double BarFieldAsNumber(const SyntheticBar& bar, std::string_view field) {
+  if (field == "open") {
+    return bar.open;
+  }
+  if (field == "high") {
+    return bar.high;
+  }
+  if (field == "low") {
+    return bar.low;
+  }
+  if (field == "close") {
+    return bar.close;
+  }
+  if (field == "volume") {
+    return bar.volume;
+  }
+  if (field == "vwap") {
+    return bar.vwap;
+  }
+  return bar.close;
+}
+
+enum class L2ValueKind { Number, Bool, String };
+
+struct L2Value {
+  L2ValueKind kind = L2ValueKind::Number;
+  double number = 0.0;
+  bool boolean = false;
+  std::string text;
+};
+
+L2Value MakeNumber(double value) { return L2Value{.kind = L2ValueKind::Number, .number = value}; }
+L2Value MakeBool(bool value) { return L2Value{.kind = L2ValueKind::Bool, .number = value ? 1.0 : 0.0, .boolean = value}; }
+L2Value MakeString(std::string value) { return L2Value{.kind = L2ValueKind::String, .text = std::move(value)}; }
+
+double L2ToNumber(const L2Value& value) {
+  if (value.kind == L2ValueKind::Number) {
+    return value.number;
+  }
+  if (value.kind == L2ValueKind::Bool) {
+    return value.boolean ? 1.0 : 0.0;
+  }
+  double parsed = 0.0;
+  if (ParseDoubleStrict(value.text, parsed)) {
+    return parsed;
+  }
+  return 0.0;
+}
+
+bool L2ToBool(const L2Value& value) {
+  if (value.kind == L2ValueKind::Bool) {
+    return value.boolean;
+  }
+  if (value.kind == L2ValueKind::Number) {
+    return std::fabs(value.number) > 1e-12;
+  }
+  if (value.text == "true") {
+    return true;
+  }
+  if (value.text == "false") {
+    return false;
+  }
+  return !value.text.empty();
+}
+
+std::string L2ToString(const L2Value& value) {
+  if (value.kind == L2ValueKind::String) {
+    return value.text;
+  }
+  if (value.kind == L2ValueKind::Bool) {
+    return value.boolean ? "true" : "false";
+  }
+  return FormatNumber(value.number);
+}
+
+bool ParseStudyRef(std::string_view source_ref, std::string& study_key, std::string& output_key) {
+  static constexpr std::string_view kPrefix = "@study.";
+  if (source_ref.rfind(kPrefix, 0) != 0) {
+    return false;
+  }
+  const std::string tail(source_ref.substr(kPrefix.size()));
+  const size_t dot = tail.find('.');
+  if (dot == std::string::npos) {
+    return false;
+  }
+  study_key = tail.substr(0, dot);
+  output_key = tail.substr(dot + 1);
+  return !study_key.empty() && !output_key.empty();
+}
+
+bool IsKnownLayer2Op(std::string_view kind) {
+  static const std::set<std::string, std::less<>> kOps = {
+      "sma", "ema", "atr", "roc", "diff", "add", "sub", "mul", "div", "gt", "gte", "lt", "lte", "eq", "neq", "and",
+      "or", "not", "abs", "clip"};
+  return kOps.find(std::string(kind)) != kOps.end();
+}
+
+bool IsKnownLayer2NodeKind(std::string_view kind) {
+  return kind == "param" || kind == "bar_field" || kind == "study_ref" || IsKnownLayer2Op(kind);
+}
+
+std::vector<L2Value> BuildStudyRefSeries(
+    const JsonValue& plan,
+    std::string_view ref,
+    const std::vector<SyntheticBar>& bars,
+    sre::layers::DiagnosticSink& sink,
+    const std::string& pointer) {
+  std::string study_key;
+  std::string output_key;
+  if (!ParseStudyRef(ref, study_key, output_key)) {
+    EmitRuntimeFeatureError(
+        sink,
+        "E_L2_MISSING_NODE_DEP",
+        "CHK_L2_STUDY_REF_RESOLVE",
+        "Layer2 study_ref node must resolve @study.<key>.<output>.",
+        "@study.<key>.<output>",
+        std::string(ref),
+        pointer,
+        "Use a valid study_ref that points to an existing studies entry.");
+    return {};
   }
 
-  const std::string dataset_format = format_v->AsString();
-  const std::string raw_path = path_v->AsString();
-  const auto fields = DatasetFieldsFromPlan(plan);
-  if (fields.empty()) {
-    return;
+  const auto* studies = sre::ResolvePointer(plan, "/studies");
+  const auto* study = studies && studies->IsObject() ? ObjectGet(*studies, study_key) : nullptr;
+  const auto* outputs = study && study->IsObject() ? ObjectGet(*study, "outputs") : nullptr;
+  const auto* output = outputs && outputs->IsObject() ? ObjectGet(*outputs, output_key) : nullptr;
+  if (!study || !outputs || !output) {
+    EmitRuntimeFeatureError(
+        sink,
+        "E_L2_MISSING_NODE_DEP",
+        "CHK_L2_STUDY_REF_RESOLVE",
+        "Layer2 study_ref references a missing studies binding.",
+        "existing /studies/<key>/outputs/<output>",
+        std::string(ref),
+        pointer,
+        "Declare the referenced study output in plan.studies before using study_ref.");
+    return {};
   }
 
+  const uint32_t ref_seed = StableSymbolSeed(ref);
+  std::vector<L2Value> series;
+  series.reserve(bars.size());
+  for (size_t i = 0; i < bars.size(); ++i) {
+    const double scale = 1.0 + static_cast<double>((ref_seed + i) % 17) / 200.0;
+    series.push_back(MakeNumber(bars[i].close * scale));
+  }
+  return series;
+}
+
+bool BuildLayer2TopoOrder(
+    const JsonValue::Object& nodes,
+    std::vector<std::string>& order,
+    sre::layers::DiagnosticSink& sink) {
+  std::unordered_map<std::string, int> indegree;
+  std::unordered_map<std::string, std::vector<std::string>> adjacency;
+  bool ok = true;
+
+  for (const auto& [node_id, _] : nodes.fields) {
+    indegree[node_id] = 0;
+  }
+
+  for (const auto& [node_id, node_value] : nodes.fields) {
+    if (!node_value.IsObject()) {
+      EmitRuntimeFeatureError(
+          sink,
+          "E_L2_UNKNOWN_NODE_KIND",
+          "CHK_L2_NODE_KIND",
+          "Layer2 node must be an object.",
+          "object",
+          node_value.TypeName(),
+          "/execution/layer2/indicator_dag/nodes/" + node_id,
+          "Define each Layer2 DAG node as an object with a valid kind.");
+      ok = false;
+      continue;
+    }
+
+    const auto* kind_v = ObjectGet(node_value, "kind");
+    const std::string kind = kind_v && kind_v->IsString() ? kind_v->AsString() : "";
+    if (!IsKnownLayer2NodeKind(kind)) {
+      EmitRuntimeFeatureError(
+          sink,
+          "E_L2_UNKNOWN_NODE_KIND",
+          "CHK_L2_NODE_KIND",
+          "Layer2 node kind is unknown.",
+          "param|bar_field|study_ref|supported op kind",
+          kind.empty() ? JsonTypeName(kind_v) : kind,
+          "/execution/layer2/indicator_dag/nodes/" + node_id + "/kind",
+          "Use a supported node kind.");
+      ok = false;
+      continue;
+    }
+
+    if (!IsKnownLayer2Op(kind)) {
+      continue;
+    }
+
+    const auto* inputs = ObjectGet(node_value, "inputs");
+    if (!inputs || !inputs->IsArray() || inputs->AsArray().items.empty()) {
+      EmitRuntimeFeatureError(
+          sink,
+          "E_L2_MISSING_NODE_DEP",
+          "CHK_L2_NODE_DEP",
+          "Layer2 op node must declare at least one input dependency.",
+          "inputs array[minItems=1]",
+          JsonTypeName(inputs),
+          "/execution/layer2/indicator_dag/nodes/" + node_id + "/inputs",
+          "Declare one or more input node ids for the operation.");
+      ok = false;
+      continue;
+    }
+
+    for (size_t i = 0; i < inputs->AsArray().items.size(); ++i) {
+      const auto& dep = inputs->AsArray().items[i];
+      if (!dep.IsString() || dep.AsString().empty()) {
+        EmitRuntimeFeatureError(
+            sink,
+            "E_L2_MISSING_NODE_DEP",
+            "CHK_L2_NODE_DEP",
+            "Layer2 op dependency entry must be a non-empty node id string.",
+            "existing node id",
+            dep.TypeName(),
+            "/execution/layer2/indicator_dag/nodes/" + node_id + "/inputs/" + std::to_string(i),
+            "Replace dependency with an existing node id.");
+        ok = false;
+        continue;
+      }
+      if (!indegree.contains(dep.AsString())) {
+        EmitRuntimeFeatureError(
+            sink,
+            "E_L2_MISSING_NODE_DEP",
+            "CHK_L2_NODE_DEP",
+            "Layer2 op dependency is missing from indicator_dag.nodes.",
+            "declared dependency node",
+            dep.AsString(),
+            "/execution/layer2/indicator_dag/nodes/" + node_id + "/inputs/" + std::to_string(i),
+            "Declare the dependency node in execution.layer2.indicator_dag.nodes.");
+        ok = false;
+        continue;
+      }
+      adjacency[dep.AsString()].push_back(node_id);
+      indegree[node_id] += 1;
+    }
+  }
+
+  if (!ok) {
+    return false;
+  }
+
+  std::set<std::string, std::less<>> ready;
+  for (const auto& [node_id, deg] : indegree) {
+    if (deg == 0) {
+      ready.insert(node_id);
+    }
+  }
+
+  while (!ready.empty()) {
+    const std::string current = *ready.begin();
+    ready.erase(ready.begin());
+    order.push_back(current);
+    auto next_it = adjacency.find(current);
+    if (next_it == adjacency.end()) {
+      continue;
+    }
+    std::sort(next_it->second.begin(), next_it->second.end());
+    for (const auto& next : next_it->second) {
+      auto deg_it = indegree.find(next);
+      if (deg_it == indegree.end()) {
+        continue;
+      }
+      deg_it->second -= 1;
+      if (deg_it->second == 0) {
+        ready.insert(next);
+      }
+    }
+  }
+
+  if (order.size() != nodes.fields.size()) {
+    EmitRuntimeFeatureError(
+        sink,
+        "E_L2_DAG_CYCLE",
+        "CHK_L2_DAG_CYCLE",
+        "Layer2 indicator_dag contains a cycle.",
+        "acyclic DAG",
+        "cycle detected",
+        "/execution/layer2/indicator_dag/nodes",
+        "Remove cyclic dependencies from execution.layer2.indicator_dag.nodes.");
+    return false;
+  }
+
+  return true;
+}
+
+L2Value EvaluateLayer2OpAt(
+    std::string_view op_kind,
+    const std::vector<std::vector<L2Value>>& inputs,
+    size_t bar_index,
+    int window_bars) {
+  auto input_at = [&](size_t input_index, size_t idx) -> const L2Value& {
+    static const L2Value kDefault = MakeNumber(0.0);
+    if (input_index >= inputs.size()) {
+      return kDefault;
+    }
+    if (idx >= inputs[input_index].size()) {
+      return kDefault;
+    }
+    return inputs[input_index][idx];
+  };
+
+  if (op_kind == "sma") {
+    const int window = std::max(1, window_bars);
+    const size_t start = bar_index >= static_cast<size_t>(window - 1) ? bar_index - static_cast<size_t>(window - 1) : 0;
+    double sum = 0.0;
+    size_t count = 0;
+    for (size_t i = start; i <= bar_index; ++i) {
+      sum += L2ToNumber(input_at(0, i));
+      ++count;
+    }
+    return MakeNumber(count == 0 ? 0.0 : sum / static_cast<double>(count));
+  }
+  if (op_kind == "gt") {
+    return MakeBool(L2ToNumber(input_at(0, bar_index)) > L2ToNumber(input_at(1, bar_index)));
+  }
+  if (op_kind == "and") {
+    bool value = true;
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      value = value && L2ToBool(input_at(i, bar_index));
+    }
+    return MakeBool(value);
+  }
+  if (op_kind == "or") {
+    bool value = false;
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      value = value || L2ToBool(input_at(i, bar_index));
+    }
+    return MakeBool(value);
+  }
+  if (op_kind == "not") {
+    return MakeBool(!L2ToBool(input_at(0, bar_index)));
+  }
+  if (op_kind == "gte") {
+    return MakeBool(L2ToNumber(input_at(0, bar_index)) >= L2ToNumber(input_at(1, bar_index)));
+  }
+  if (op_kind == "lt") {
+    return MakeBool(L2ToNumber(input_at(0, bar_index)) < L2ToNumber(input_at(1, bar_index)));
+  }
+  if (op_kind == "lte") {
+    return MakeBool(L2ToNumber(input_at(0, bar_index)) <= L2ToNumber(input_at(1, bar_index)));
+  }
+  if (op_kind == "eq") {
+    return MakeBool(L2ToString(input_at(0, bar_index)) == L2ToString(input_at(1, bar_index)));
+  }
+  if (op_kind == "neq") {
+    return MakeBool(L2ToString(input_at(0, bar_index)) != L2ToString(input_at(1, bar_index)));
+  }
+  if (op_kind == "add") {
+    return MakeNumber(L2ToNumber(input_at(0, bar_index)) + L2ToNumber(input_at(1, bar_index)));
+  }
+  if (op_kind == "sub" || op_kind == "diff") {
+    return MakeNumber(L2ToNumber(input_at(0, bar_index)) - L2ToNumber(input_at(1, bar_index)));
+  }
+  if (op_kind == "mul") {
+    return MakeNumber(L2ToNumber(input_at(0, bar_index)) * L2ToNumber(input_at(1, bar_index)));
+  }
+  if (op_kind == "div") {
+    const double denom = L2ToNumber(input_at(1, bar_index));
+    if (std::fabs(denom) < 1e-12) {
+      return MakeNumber(0.0);
+    }
+    return MakeNumber(L2ToNumber(input_at(0, bar_index)) / denom);
+  }
+  if (op_kind == "abs") {
+    return MakeNumber(std::fabs(L2ToNumber(input_at(0, bar_index))));
+  }
+  return MakeNumber(0.0);
+}
+
+std::string CoerceEmitType(std::string_view value, std::string_view type_name) {
+  if (type_name == "string" || type_name == "datetime") {
+    return std::string(value);
+  }
+  if (type_name == "bool") {
+    if (value == "true" || value == "1") {
+      return "true";
+    }
+    return "false";
+  }
+  if (type_name == "int") {
+    int parsed = 0;
+    if (ParseIntStrict(value, parsed)) {
+      return std::to_string(parsed);
+    }
+    double as_double = 0.0;
+    if (ParseDoubleStrict(value, as_double)) {
+      return std::to_string(static_cast<int>(std::llround(as_double)));
+    }
+    return "0";
+  }
+  if (type_name == "float") {
+    double parsed = 0.0;
+    if (ParseDoubleStrict(value, parsed)) {
+      return FormatNumber(parsed);
+    }
+    return "0";
+  }
+  return std::string(value);
+}
+
+struct Layer2EventRow {
+  std::string symbol;
+  int bar_index = 0;
+  std::unordered_map<std::string, std::string> columns;
+};
+
+struct Layer2EvaluationResult {
+  bool ok = true;
+  std::unordered_map<std::string, std::vector<Layer2EventRow>> events_by_symbol;
+  std::unordered_map<std::string, std::vector<SyntheticBar>> bars_by_symbol;
+};
+
+struct Layer2RuntimeConfig {
+  bool enabled = false;
+  std::string bar_basis = "close";
+  bool require_final_bar = true;
+  std::string align_mode = "last_completed";
+};
+
+Layer2RuntimeConfig ParseLayer2RuntimeConfig(const JsonValue& plan) {
+  Layer2RuntimeConfig cfg;
+  const auto* layer2 = sre::ResolvePointer(plan, "/execution/layer2");
+  if (!layer2 || !layer2->IsObject()) {
+    return cfg;
+  }
+  cfg.enabled = JsonBoolAt(plan, "/execution/layer2/enabled", true);
+  cfg.bar_basis = JsonStringAt(plan, "/execution/layer2/bar_basis", "close");
+  if (cfg.bar_basis != "close" && cfg.bar_basis != "open" && cfg.bar_basis != "intrabar") {
+    cfg.bar_basis = "close";
+  }
+  cfg.require_final_bar = JsonBoolAt(plan, "/execution/layer2/require_final_bar", true);
+  cfg.align_mode = JsonStringAt(plan, "/execution/layer2/align/mode", "last_completed");
+  if (cfg.align_mode != "last_completed" && cfg.align_mode != "strict_close") {
+    cfg.align_mode = "last_completed";
+  }
+  return cfg;
+}
+
+Layer2EvaluationResult EvaluateLayer2(const JsonValue& plan, const std::vector<std::string>& symbols, sre::layers::DiagnosticSink& sink) {
+  Layer2EvaluationResult result;
+  const Layer2RuntimeConfig layer2_cfg = ParseLayer2RuntimeConfig(plan);
+  if (!layer2_cfg.enabled) {
+    return result;
+  }
+
+  const auto* nodes_value = sre::ResolvePointer(plan, "/execution/layer2/indicator_dag/nodes");
+  if (!nodes_value || !nodes_value->IsObject() || nodes_value->AsObject().fields.empty()) {
+    EmitRuntimeFeatureError(
+        sink,
+        "E_L2_MISSING_NODE_DEP",
+        "CHK_L2_NODES_PRESENT",
+        "Layer2 enabled requires indicator_dag.nodes to be a non-empty object.",
+        "non-empty object",
+        JsonTypeName(nodes_value),
+        "/execution/layer2/indicator_dag/nodes",
+        "Define execution.layer2.indicator_dag.nodes.");
+    result.ok = false;
+    return result;
+  }
+
+  std::vector<std::string> topo_order;
+  if (!BuildLayer2TopoOrder(nodes_value->AsObject(), topo_order, sink)) {
+    result.ok = false;
+    return result;
+  }
+
+  const auto* trigger_node_value = sre::ResolvePointer(plan, "/execution/layer2/event_emitter/trigger_node");
+  const std::string trigger_node =
+      trigger_node_value && trigger_node_value->IsString() ? trigger_node_value->AsString() : std::string();
+  if (trigger_node.empty() || !nodes_value->AsObject().fields.contains(trigger_node)) {
+    EmitRuntimeFeatureError(
+        sink,
+        "E_L2_MISSING_NODE_DEP",
+        "CHK_L2_TRIGGER_NODE",
+        "Layer2 event_emitter.trigger_node must reference an existing DAG node.",
+        "existing node id",
+        trigger_node.empty() ? JsonTypeName(trigger_node_value) : trigger_node,
+        "/execution/layer2/event_emitter/trigger_node",
+        "Set event_emitter.trigger_node to a declared node id.");
+    result.ok = false;
+    return result;
+  }
+
+  const std::string emit_mode = JsonStringAt(plan, "/execution/layer2/event_emitter/emit_mode", "on_true_edge");
+  int cooldown = 0;
+  const auto* cooldown_v = sre::ResolvePointer(plan, "/execution/layer2/event_emitter/cooldown_bars");
+  if (cooldown_v && cooldown_v->IsNumber()) {
+    cooldown = std::max(0, static_cast<int>(std::llround(cooldown_v->AsNumber())));
+  }
+  const auto* emit_columns = sre::ResolvePointer(plan, "/execution/layer2/event_emitter/emit_columns");
+  if (!emit_columns || !emit_columns->IsArray() || emit_columns->AsArray().items.empty()) {
+    EmitRuntimeFeatureError(
+        sink,
+        "E_L2_MISSING_NODE_DEP",
+        "CHK_L2_EMIT_COLUMNS",
+        "Layer2 event emitter requires emit_columns.",
+        "emit_columns array[minItems=1]",
+        JsonTypeName(emit_columns),
+        "/execution/layer2/event_emitter/emit_columns",
+        "Provide one or more output columns in execution.layer2.event_emitter.emit_columns.");
+    result.ok = false;
+    return result;
+  }
+
+  for (const auto& symbol : symbols) {
+    auto bars = BuildSyntheticBars(symbol);
+    std::unordered_map<std::string, std::vector<L2Value>> node_values;
+    bool symbol_ok = true;
+
+    for (const auto& node_id : topo_order) {
+      const auto& node = nodes_value->AsObject().fields.at(node_id);
+      const auto* kind_v = ObjectGet(node, "kind");
+      const std::string kind = kind_v && kind_v->IsString() ? kind_v->AsString() : "";
+      std::vector<L2Value> series;
+      series.reserve(bars.size());
+
+      if (kind == "param") {
+        const auto* type_v = ObjectGet(node, "type");
+        const auto* value_v = ObjectGet(node, "value");
+        const std::string param_type = type_v && type_v->IsString() ? type_v->AsString() : "float";
+        L2Value value = MakeNumber(0.0);
+        if (param_type == "bool") {
+          value = MakeBool(value_v && value_v->IsBool() ? value_v->AsBool() : false);
+        } else if (param_type == "string") {
+          value = MakeString(value_v && value_v->IsString() ? value_v->AsString() : "");
+        } else {
+          value = MakeNumber(value_v && value_v->IsNumber() ? value_v->AsNumber() : 0.0);
+        }
+        series.assign(bars.size(), value);
+      } else if (kind == "bar_field") {
+        const auto* field_v = ObjectGet(node, "field");
+        std::string default_field = "close";
+        if (layer2_cfg.bar_basis == "open") {
+          default_field = "open";
+        }
+        const std::string field = field_v && field_v->IsString() ? field_v->AsString() : default_field;
+        int lag = 0;
+        const auto* lag_v = ObjectGet(node, "lag_bars");
+        if (lag_v && lag_v->IsNumber()) {
+          lag = std::max(0, static_cast<int>(std::llround(lag_v->AsNumber())));
+        }
+        for (size_t i = 0; i < bars.size(); ++i) {
+          const size_t src = i >= static_cast<size_t>(lag) ? i - static_cast<size_t>(lag) : 0;
+          if (field == "datetime") {
+            series.push_back(MakeString(bars[src].datetime));
+          } else {
+            series.push_back(MakeNumber(BarFieldAsNumber(bars[src], field)));
+          }
+        }
+      } else if (kind == "study_ref") {
+        const auto* ref_v = ObjectGet(node, "ref");
+        const std::string ref = ref_v && ref_v->IsString() ? ref_v->AsString() : "";
+        int lag = 0;
+        const auto* lag_v = ObjectGet(node, "lag_bars");
+        if (lag_v && lag_v->IsNumber()) {
+          lag = std::max(0, static_cast<int>(std::llround(lag_v->AsNumber())));
+        }
+        auto raw = BuildStudyRefSeries(plan, ref, bars, sink, "/execution/layer2/indicator_dag/nodes/" + node_id + "/ref");
+        if (raw.empty()) {
+          symbol_ok = false;
+          break;
+        }
+        for (size_t i = 0; i < raw.size(); ++i) {
+          const size_t src = i >= static_cast<size_t>(lag) ? i - static_cast<size_t>(lag) : 0;
+          series.push_back(raw[src]);
+        }
+      } else if (IsKnownLayer2Op(kind)) {
+        const auto* inputs_v = ObjectGet(node, "inputs");
+        const auto* window_v = ObjectGet(node, "window_bars");
+        const int window = window_v && window_v->IsNumber() ? std::max(1, static_cast<int>(std::llround(window_v->AsNumber()))) : 1;
+        std::vector<std::vector<L2Value>> inputs;
+        if (inputs_v && inputs_v->IsArray()) {
+          for (size_t i = 0; i < inputs_v->AsArray().items.size(); ++i) {
+            const auto& dep = inputs_v->AsArray().items[i];
+            if (!dep.IsString()) {
+              continue;
+            }
+            auto dep_it = node_values.find(dep.AsString());
+            if (dep_it == node_values.end()) {
+              EmitRuntimeFeatureError(
+                  sink,
+                  "E_L2_MISSING_NODE_DEP",
+                  "CHK_L2_NODE_DEP",
+                  "Layer2 dependency was unavailable during evaluation.",
+                  "evaluated dependency node",
+                  dep.AsString(),
+                  "/execution/layer2/indicator_dag/nodes/" + node_id + "/inputs/" + std::to_string(i),
+                  "Ensure dependencies are valid and acyclic.");
+              symbol_ok = false;
+              break;
+            }
+            inputs.push_back(dep_it->second);
+          }
+        }
+        if (!symbol_ok) {
+          break;
+        }
+        for (size_t i = 0; i < bars.size(); ++i) {
+          series.push_back(EvaluateLayer2OpAt(kind, inputs, i, window));
+        }
+      }
+      node_values[node_id] = std::move(series);
+    }
+
+    if (!symbol_ok) {
+      result.ok = false;
+      break;
+    }
+
+    std::vector<Layer2EventRow> events;
+    bool prev_trigger = false;
+    int last_emit = -1000000;
+    size_t evaluable_bars = bars.size();
+    const bool completed_only =
+        layer2_cfg.require_final_bar && (layer2_cfg.align_mode == "last_completed" || layer2_cfg.align_mode == "strict_close");
+    if (completed_only && evaluable_bars > 0) {
+      evaluable_bars -= 1;
+    }
+    for (size_t i = 0; i < evaluable_bars; ++i) {
+      const bool trigger = L2ToBool(node_values[trigger_node][i]);
+      bool fire = emit_mode == "on_true" ? trigger : (trigger && !prev_trigger);
+      if (fire && cooldown > 0 && static_cast<int>(i) - last_emit <= cooldown) {
+        fire = false;
+      }
+      if (fire) {
+        Layer2EventRow row;
+        row.symbol = symbol;
+        row.bar_index = static_cast<int>(i);
+        row.columns["symbol"] = symbol;
+        row.columns["bar_index"] = std::to_string(row.bar_index);
+        for (size_t c = 0; c < emit_columns->AsArray().items.size(); ++c) {
+          const auto& col = emit_columns->AsArray().items[c];
+          if (!col.IsObject()) {
+            continue;
+          }
+          const auto* name_v = ObjectGet(col, "name");
+          if (!name_v || !name_v->IsString() || name_v->AsString().empty()) {
+            continue;
+          }
+          const std::string name = name_v->AsString();
+          const std::string type = JsonStringAt(col, "/type", "string");
+          std::string raw;
+
+          const auto* ref_v = ObjectGet(col, "ref");
+          if (ref_v && ref_v->IsString()) {
+            const std::string ref = ref_v->AsString();
+            if (ref == "@symbol") raw = symbol;
+            else if (ref == "@bar.open") raw = FormatNumber(bars[i].open);
+            else if (ref == "@bar.high") raw = FormatNumber(bars[i].high);
+            else if (ref == "@bar.low") raw = FormatNumber(bars[i].low);
+            else if (ref == "@bar.close") raw = FormatNumber(bars[i].close);
+            else if (ref == "@bar.volume") raw = FormatNumber(bars[i].volume);
+            else if (ref == "@bar.vwap") raw = FormatNumber(bars[i].vwap);
+            else if (ref == "@bar.datetime") raw = bars[i].datetime;
+          }
+          const auto* node_v = ObjectGet(col, "node");
+          if (raw.empty() && node_v && node_v->IsString()) {
+            auto it = node_values.find(node_v->AsString());
+            if (it == node_values.end() || i >= it->second.size()) {
+              EmitRuntimeFeatureError(
+                  sink,
+                  "E_L2_MISSING_NODE_DEP",
+                  "CHK_L2_EMIT_NODE",
+                  "event_emitter column node reference is missing.",
+                  "existing node id",
+                  node_v->AsString(),
+                  "/execution/layer2/event_emitter/emit_columns/" + std::to_string(c) + "/node",
+                  "Reference an existing indicator_dag node.");
+              symbol_ok = false;
+              break;
+            }
+            raw = L2ToString(it->second[i]);
+          }
+
+          row.columns[name] = CoerceEmitType(raw, type);
+        }
+        if (!symbol_ok) {
+          break;
+        }
+        events.push_back(std::move(row));
+        last_emit = static_cast<int>(i);
+      }
+      prev_trigger = trigger;
+    }
+    if (!symbol_ok) {
+      result.ok = false;
+      break;
+    }
+
+    result.bars_by_symbol[symbol] = std::move(bars);
+    result.events_by_symbol[symbol] = std::move(events);
+  }
+
+  return result;
+}
+
+std::string ResolveEventDatasetValue(
+    const DatasetFieldSpec& field,
+    const Layer2EventRow& event,
+    const std::vector<SyntheticBar>& bars) {
+  const std::string& source = field.source_ref;
+  if (source.empty()) {
+    auto it = event.columns.find(field.name);
+    return it == event.columns.end() ? "" : it->second;
+  }
+  if (source.rfind("@event.", 0) == 0) {
+    const std::string key = source.substr(7);
+    auto it = event.columns.find(key);
+    return it == event.columns.end() ? "" : it->second;
+  }
+  if (source == "@symbol") {
+    return event.symbol;
+  }
+  if (source == "@bar.datetime") {
+    return event.bar_index >= 0 && static_cast<size_t>(event.bar_index) < bars.size() ? bars[static_cast<size_t>(event.bar_index)].datetime : "";
+  }
+  if (source == "@bar.open" || source == "@bar.high" || source == "@bar.low" || source == "@bar.close" || source == "@bar.volume" ||
+      source == "@bar.vwap") {
+    if (event.bar_index < 0 || static_cast<size_t>(event.bar_index) >= bars.size()) {
+      return "";
+    }
+    const auto& bar = bars[static_cast<size_t>(event.bar_index)];
+    if (source == "@bar.open") {
+      return FormatNumber(bar.open);
+    }
+    if (source == "@bar.high") {
+      return FormatNumber(bar.high);
+    }
+    if (source == "@bar.low") {
+      return FormatNumber(bar.low);
+    }
+    if (source == "@bar.close") {
+      return FormatNumber(bar.close);
+    }
+    if (source == "@bar.volume") {
+      return FormatNumber(bar.volume);
+    }
+    return FormatNumber(bar.vwap);
+  }
+  if (source.rfind("@node.", 0) == 0) {
+    const std::string key = source.substr(6);
+    auto it = event.columns.find(key);
+    return it == event.columns.end() ? "" : it->second;
+  }
+  if (!source.empty() && source[0] == '@') {
+    auto it = event.columns.find(source);
+    return it == event.columns.end() ? "" : it->second;
+  }
+  return source;
+}
+
+bool EmitBarsDatasetLegacy(
+    const JsonValue& plan,
+    const std::filesystem::path& repo_root,
+    const std::string& dataset_format,
+    const std::string& raw_path,
+    const std::vector<DatasetFieldSpec>& fields,
+    sre::layers::DiagnosticSink& sink) {
   std::vector<std::string> headers;
   headers.reserve(fields.size());
   for (const auto& field : fields) {
@@ -1229,12 +2191,25 @@ void EmitDatasetOutputs(const JsonValue& plan, const std::filesystem::path& repo
   }
 
   const std::vector<std::string> symbols = PlanUniverseSymbols(plan);
-
-  auto build_row = [&](std::string_view symbol) {
+  auto build_row = [&](std::string_view symbol, bool& ok) {
     std::vector<std::string> row;
     row.reserve(fields.size());
     for (const auto& field : fields) {
-      row.push_back(ResolveDatasetValue(field.source_ref, symbol));
+      try {
+        row.push_back(ResolveDatasetValueForBars(field.source_ref, symbol));
+      } catch (const std::exception& ex) {
+        EmitRuntimeFeatureError(
+            sink,
+            "E_NOT_IMPLEMENTED",
+            "CHK_RUNTIME_DATASET_REF_NOT_IMPLEMENTED",
+            "Dataset bars source reference is not implemented.",
+            "@symbol or literal value",
+            ex.what(),
+            field.source_pointer.empty() ? "/outputs/dataset/fields" : field.source_pointer,
+            "Keep outputs.dataset.source=bars with @symbol/literal refs, or switch to layer2_event_emitter.");
+        ok = false;
+        return std::vector<std::string>{};
+      }
     }
     return row;
   };
@@ -1242,21 +2217,30 @@ void EmitDatasetOutputs(const JsonValue& plan, const std::filesystem::path& repo
   const bool per_symbol = PathTemplateUsesSymbol(raw_path);
   if (per_symbol) {
     for (const auto& symbol : symbols) {
+      bool ok = true;
+      const std::vector<std::vector<std::string>> rows{build_row(symbol, ok)};
+      if (!ok) {
+        return false;
+      }
       const auto out_path = ResolvePlanOutputPath(raw_path, repo_root, symbol);
-      const std::vector<std::vector<std::string>> rows{build_row(symbol)};
       if (dataset_format == "csv") {
         WriteCsvFile(out_path, headers, rows);
       } else if (dataset_format == "jsonl") {
         WriteJsonlFile(out_path, fields, rows);
       }
     }
-    return;
+    return true;
   }
 
   std::vector<std::vector<std::string>> rows;
   rows.reserve(symbols.size());
   for (const auto& symbol : symbols) {
-    rows.push_back(build_row(symbol));
+    bool ok = true;
+    auto row = build_row(symbol, ok);
+    if (!ok) {
+      return false;
+    }
+    rows.push_back(std::move(row));
   }
   const auto out_path = ResolvePlanOutputPath(raw_path, repo_root, "");
   if (dataset_format == "csv") {
@@ -1264,6 +2248,566 @@ void EmitDatasetOutputs(const JsonValue& plan, const std::filesystem::path& repo
   } else if (dataset_format == "jsonl") {
     WriteJsonlFile(out_path, fields, rows);
   }
+  return true;
+}
+
+bool EmitLayer2EventDataset(
+    const JsonValue& plan,
+    const std::filesystem::path& repo_root,
+    const std::string& dataset_format,
+    const std::string& raw_path,
+    const std::vector<DatasetFieldSpec>& fields,
+    sre::layers::DiagnosticSink& sink,
+    std::unordered_map<std::string, std::vector<SyntheticBar>>& layer2_bars_by_symbol) {
+  const std::vector<std::string> symbols = PlanUniverseSymbols(plan);
+  Layer2EvaluationResult layer2 = EvaluateLayer2(plan, symbols, sink);
+  if (!layer2.ok) {
+    return false;
+  }
+  layer2_bars_by_symbol = layer2.bars_by_symbol;
+
+  std::vector<std::string> headers;
+  headers.reserve(fields.size());
+  for (const auto& field : fields) {
+    headers.push_back(field.name);
+  }
+
+  const bool per_symbol = PathTemplateUsesSymbol(raw_path);
+  if (per_symbol) {
+    for (const auto& symbol : symbols) {
+      const auto out_path = ResolvePlanOutputPath(raw_path, repo_root, symbol);
+      std::vector<std::vector<std::string>> rows;
+      const auto events_it = layer2.events_by_symbol.find(symbol);
+      const auto bars_it = layer2.bars_by_symbol.find(symbol);
+      if (events_it != layer2.events_by_symbol.end() && bars_it != layer2.bars_by_symbol.end()) {
+        for (const auto& event : events_it->second) {
+          std::vector<std::string> row;
+          row.reserve(fields.size());
+          for (const auto& field : fields) {
+            row.push_back(ResolveEventDatasetValue(field, event, bars_it->second));
+          }
+          rows.push_back(std::move(row));
+        }
+      }
+      if (dataset_format == "csv") {
+        WriteCsvFile(out_path, headers, rows);
+      } else if (dataset_format == "jsonl") {
+        WriteJsonlFile(out_path, fields, rows);
+      }
+    }
+    return true;
+  }
+
+  std::vector<std::vector<std::string>> rows;
+  for (const auto& symbol : symbols) {
+    const auto events_it = layer2.events_by_symbol.find(symbol);
+    const auto bars_it = layer2.bars_by_symbol.find(symbol);
+    if (events_it == layer2.events_by_symbol.end() || bars_it == layer2.bars_by_symbol.end()) {
+      continue;
+    }
+    for (const auto& event : events_it->second) {
+      std::vector<std::string> row;
+      row.reserve(fields.size());
+      for (const auto& field : fields) {
+        row.push_back(ResolveEventDatasetValue(field, event, bars_it->second));
+      }
+      rows.push_back(std::move(row));
+    }
+  }
+  const auto out_path = ResolvePlanOutputPath(raw_path, repo_root, "");
+  if (dataset_format == "csv") {
+    WriteCsvFile(out_path, headers, rows);
+  } else if (dataset_format == "jsonl") {
+    WriteJsonlFile(out_path, fields, rows);
+  }
+  return true;
+}
+
+double QuantileValue(std::vector<double> values, double q) {
+  if (values.empty()) {
+    return 0.0;
+  }
+  std::sort(values.begin(), values.end());
+  const double clamped_q = std::max(0.0, std::min(1.0, q));
+  const double pos = clamped_q * static_cast<double>(values.size() - 1);
+  const size_t lo = static_cast<size_t>(std::floor(pos));
+  const size_t hi = static_cast<size_t>(std::ceil(pos));
+  if (lo == hi) {
+    return values[lo];
+  }
+  const double alpha = pos - static_cast<double>(lo);
+  return values[lo] * (1.0 - alpha) + values[hi] * alpha;
+}
+
+bool ComputeLayer3Augmentation(
+    const JsonValue& plan,
+    const std::filesystem::path& repo_root,
+    const std::vector<std::string>& symbols,
+    const std::unordered_map<std::string, std::vector<SyntheticBar>>& layer2_bars_by_symbol,
+    sre::layers::DiagnosticSink& sink) {
+  const auto* layer3 = sre::ResolvePointer(plan, "/outputs/layer3");
+  if (!layer3 || !layer3->IsObject()) {
+    return true;
+  }
+  const auto* enabled = ObjectGet(*layer3, "enabled");
+  const bool layer3_enabled = (enabled == nullptr) || !enabled->IsBool() || enabled->AsBool();
+  if (!layer3_enabled || !Layer3AugmentationRequested(plan)) {
+    return true;
+  }
+
+  const std::string input_template = JsonStringAt(plan, "/outputs/layer3/inputs/layer2_authoritative_csv", "");
+  if (input_template.empty()) {
+    EmitRuntimeFeatureError(
+        sink,
+        "E_IO_OUTPUT_CONFIG_INVALID",
+        "CHK_L3_INPUT_CSV",
+        "Layer3 augmentation requires inputs.layer2_authoritative_csv.",
+        "non-empty path",
+        "missing",
+        "/outputs/layer3/inputs/layer2_authoritative_csv",
+        "Set outputs.layer3.inputs.layer2_authoritative_csv.");
+    return false;
+  }
+
+  const auto leakage_kind = [&](std::string_view pointer) -> bool {
+    const auto* kind_v = sre::ResolvePointer(plan, pointer);
+    if (!kind_v || !kind_v->IsString()) {
+      return false;
+    }
+    const std::string kind = kind_v->AsString();
+    return kind.find("same_bar") != std::string::npos || kind.find("from_t") != std::string::npos ||
+           kind.find("include_t") != std::string::npos;
+  };
+  if (leakage_kind("/outputs/layer3/outcomes/compute/mfe/kind") || leakage_kind("/outputs/layer3/outcomes/compute/mfa/kind") ||
+      leakage_kind("/outputs/layer3/outcomes/compute/ret/kind")) {
+    EmitRuntimeFeatureError(
+        sink,
+        "E_L3_OUTCOME_LEAKAGE_SAME_BAR",
+        "CHK_L3_OUTCOME_LEAKAGE",
+        "Layer3 outcomes compute config would include same-bar data (t).",
+        "t+1..t+H only",
+        "compute kind requested same_bar",
+        "/outputs/layer3/outcomes/compute",
+        "Use outcome compute kinds that start from t+1.");
+    return false;
+  }
+
+  int horizon = 1;
+  const auto* horizon_v = sre::ResolvePointer(plan, "/outputs/layer3/outcomes/horizon/value");
+  if (horizon_v && horizon_v->IsNumber()) {
+    horizon = std::max(1, static_cast<int>(std::llround(horizon_v->AsNumber())));
+  }
+  const std::string entry_field = JsonStringAt(plan, "/outputs/layer3/outcomes/entry_price_field", "close");
+  const std::string high_field = JsonStringAt(plan, "/outputs/layer3/outcomes/price_fields/high", "high");
+  const std::string low_field = JsonStringAt(plan, "/outputs/layer3/outcomes/price_fields/low", "low");
+  const std::string close_field = JsonStringAt(plan, "/outputs/layer3/outcomes/price_fields/close", "close");
+  const std::string cost_type = JsonStringAt(plan, "/outputs/layer3/outcomes/cost_model/type", "none");
+  const auto* bps_v = sre::ResolvePointer(plan, "/outputs/layer3/outcomes/cost_model/bps");
+  const double bps = bps_v && bps_v->IsNumber() ? std::max(0.0, bps_v->AsNumber()) : 0.0;
+
+  struct OutcomeRow {
+    std::string symbol;
+    int event_index = 0;
+    int event_bar_index = 0;
+    double entry_price = 0.0;
+    double mfe = 0.0;
+    double mfa = 0.0;
+    double ret = 0.0;
+    double ret_net = 0.0;
+    std::unordered_map<std::string, double> numeric_fields;
+    std::string bucket_key = "all";
+  };
+
+  std::vector<OutcomeRow> outcomes;
+  for (const auto& symbol : symbols) {
+    const auto input_path = ResolvePlanOutputPath(input_template, repo_root, symbol);
+    std::vector<std::string> headers;
+    std::vector<std::vector<std::string>> rows;
+    if (!ReadCsvFile(input_path, headers, rows)) {
+      EmitRuntimeFeatureError(
+          sink,
+          "E_IO_OUTPUT_CONFIG_INVALID",
+          "CHK_L3_INPUT_CSV",
+          "Layer3 augmentation input CSV is missing.",
+          "existing readable CSV",
+          input_path.string(),
+          "/outputs/layer3/inputs/layer2_authoritative_csv",
+          "Ensure layer2 authoritative dataset exists before running layer3 augmentation.");
+      return false;
+    }
+
+    std::unordered_map<std::string, size_t> idx;
+    for (size_t i = 0; i < headers.size(); ++i) {
+      idx[headers[i]] = i;
+    }
+    auto entry_it = idx.find(entry_field);
+    if (entry_it == idx.end()) {
+      EmitRuntimeFeatureError(
+          sink,
+          "E_IO_OUTPUT_CONFIG_INVALID",
+          "CHK_L3_ENTRY_FIELD",
+          "Layer3 entry_price_field was not found in input CSV.",
+          "column present in input CSV",
+          entry_field,
+          "/outputs/layer3/outcomes/entry_price_field",
+          "Emit the configured entry_price_field in the layer2 authoritative dataset.");
+      return false;
+    }
+
+    auto bars_it = layer2_bars_by_symbol.find(symbol);
+    std::vector<SyntheticBar> bars = bars_it == layer2_bars_by_symbol.end() ? BuildSyntheticBars(symbol) : bars_it->second;
+    if (bars.size() < 3) {
+      continue;
+    }
+
+    for (size_t r = 0; r < rows.size(); ++r) {
+      const auto& row = rows[r];
+      int bar_index = static_cast<int>(r);
+      auto bar_idx_it = idx.find("bar_index");
+      if (bar_idx_it != idx.end() && bar_idx_it->second < row.size()) {
+        ParseIntStrict(row[bar_idx_it->second], bar_index);
+      }
+      bar_index = std::max(0, std::min(static_cast<int>(bars.size()) - 1, bar_index));
+      const int start = bar_index + 1;
+      const int end = std::min(static_cast<int>(bars.size()) - 1, bar_index + horizon);
+      if (start <= bar_index) {
+        EmitRuntimeFeatureError(
+            sink,
+            "E_L3_OUTCOME_LEAKAGE_SAME_BAR",
+            "CHK_L3_OUTCOME_LEAKAGE",
+            "Layer3 outcomes window included same-bar index t.",
+            "start index > t",
+            std::to_string(start),
+            "/outputs/layer3/outcomes/horizon",
+            "Ensure horizon evaluation starts at t+1.");
+        return false;
+      }
+      if (start > end) {
+        continue;
+      }
+
+      double entry = 0.0;
+      if (entry_it->second < row.size()) {
+        ParseDoubleStrict(row[entry_it->second], entry);
+      }
+      if (std::fabs(entry) < 1e-12) {
+        entry = bars[static_cast<size_t>(bar_index)].close;
+      }
+
+      double max_high = -std::numeric_limits<double>::infinity();
+      double min_low = std::numeric_limits<double>::infinity();
+      for (int i = start; i <= end; ++i) {
+        max_high = std::max(max_high, BarFieldAsNumber(bars[static_cast<size_t>(i)], high_field));
+        min_low = std::min(min_low, BarFieldAsNumber(bars[static_cast<size_t>(i)], low_field));
+      }
+      const double close_h = BarFieldAsNumber(bars[static_cast<size_t>(end)], close_field);
+      const double mfe = max_high - entry;
+      const double mfa = entry - min_low;
+      const double ret = close_h - entry;
+      const double cost = cost_type == "fixed_bps" ? (entry * bps / 10000.0) : 0.0;
+      const double ret_net = ret - cost;
+
+      OutcomeRow out;
+      out.symbol = symbol;
+      out.event_index = static_cast<int>(r);
+      out.event_bar_index = bar_index;
+      out.entry_price = entry;
+      out.mfe = mfe;
+      out.mfa = mfa;
+      out.ret = ret;
+      out.ret_net = ret_net;
+      out.numeric_fields["entry_price"] = entry;
+      out.numeric_fields["mfe"] = mfe;
+      out.numeric_fields["mfa"] = mfa;
+      out.numeric_fields["ret"] = ret;
+      out.numeric_fields["ret_net"] = ret_net;
+      for (size_t i = 0; i < headers.size() && i < row.size(); ++i) {
+        double parsed = 0.0;
+        if (ParseDoubleStrict(row[i], parsed)) {
+          out.numeric_fields[headers[i]] = parsed;
+        }
+      }
+      outcomes.push_back(std::move(out));
+    }
+  }
+
+  if (outcomes.empty()) {
+    return true;
+  }
+
+  struct BucketDim {
+    std::string field;
+    std::vector<double> q;
+    std::vector<double> cuts;
+  };
+  std::vector<BucketDim> dims;
+  const auto* dims_v = sre::ResolvePointer(plan, "/outputs/layer3/bucketing/dimensions");
+  if (dims_v && dims_v->IsArray()) {
+    for (const auto& dim : dims_v->AsArray().items) {
+      if (!dim.IsObject()) {
+        continue;
+      }
+      const auto* field_v = ObjectGet(dim, "field");
+      const auto* q_v = ObjectGet(dim, "q");
+      if (!field_v || !field_v->IsString() || !q_v || !q_v->IsArray() || q_v->AsArray().items.empty()) {
+        continue;
+      }
+      BucketDim d;
+      d.field = field_v->AsString();
+      for (const auto& q_item : q_v->AsArray().items) {
+        if (q_item.IsNumber()) {
+          d.q.push_back(std::max(0.0, std::min(1.0, q_item.AsNumber())));
+        }
+      }
+      if (d.q.empty()) {
+        continue;
+      }
+      std::sort(d.q.begin(), d.q.end());
+      d.q.erase(std::unique(d.q.begin(), d.q.end()), d.q.end());
+
+      std::vector<double> values;
+      for (const auto& row : outcomes) {
+        auto it = row.numeric_fields.find(d.field);
+        if (it != row.numeric_fields.end()) {
+          values.push_back(it->second);
+        }
+      }
+      for (double q : d.q) {
+        d.cuts.push_back(QuantileValue(values, q));
+      }
+      dims.push_back(std::move(d));
+    }
+  }
+
+  for (auto& row : outcomes) {
+    if (dims.empty()) {
+      row.bucket_key = "all";
+      continue;
+    }
+    std::vector<std::string> parts;
+    for (const auto& dim : dims) {
+      auto it = row.numeric_fields.find(dim.field);
+      if (it == row.numeric_fields.end()) {
+        parts.push_back(dim.field + "=missing");
+        continue;
+      }
+      int bucket = 0;
+      while (bucket < static_cast<int>(dim.cuts.size()) && it->second > dim.cuts[static_cast<size_t>(bucket)]) {
+        ++bucket;
+      }
+      parts.push_back(dim.field + "=b" + std::to_string(bucket));
+    }
+    std::ostringstream key;
+    for (size_t i = 0; i < parts.size(); ++i) {
+      if (i > 0) {
+        key << "|";
+      }
+      key << parts[i];
+    }
+    row.bucket_key = key.str();
+  }
+
+  const std::string outcomes_path = JsonStringAt(plan, "/outputs/layer3/artifacts/outcomes_per_event", "");
+  const std::string bucket_path = JsonStringAt(plan, "/outputs/layer3/artifacts/bucket_stats", "");
+
+  if (!outcomes_path.empty()) {
+    const std::vector<std::string> headers = {
+        "symbol", "event_index", "event_bar_index", "entry_price", "mfe", "mfa", "ret", "ret_net", "bucket_key"};
+    const bool per_symbol = PathTemplateUsesSymbol(outcomes_path);
+    if (per_symbol) {
+      for (const auto& symbol : symbols) {
+        std::vector<std::vector<std::string>> rows;
+        for (const auto& row : outcomes) {
+          if (row.symbol != symbol) {
+            continue;
+          }
+          rows.push_back({row.symbol,
+                          std::to_string(row.event_index),
+                          std::to_string(row.event_bar_index),
+                          FormatNumber(row.entry_price),
+                          FormatNumber(row.mfe),
+                          FormatNumber(row.mfa),
+                          FormatNumber(row.ret),
+                          FormatNumber(row.ret_net),
+                          row.bucket_key});
+        }
+        WriteCsvFile(ResolvePlanOutputPath(outcomes_path, repo_root, symbol), headers, rows);
+      }
+    } else {
+      std::vector<std::vector<std::string>> rows;
+      for (const auto& row : outcomes) {
+        rows.push_back({row.symbol,
+                        std::to_string(row.event_index),
+                        std::to_string(row.event_bar_index),
+                        FormatNumber(row.entry_price),
+                        FormatNumber(row.mfe),
+                        FormatNumber(row.mfa),
+                        FormatNumber(row.ret),
+                        FormatNumber(row.ret_net),
+                        row.bucket_key});
+      }
+      WriteCsvFile(ResolvePlanOutputPath(outcomes_path, repo_root, ""), headers, rows);
+    }
+  }
+
+  if (!bucket_path.empty()) {
+    struct BucketAgg {
+      int count = 0;
+      double sum_ret_net = 0.0;
+      double sum_mfe = 0.0;
+      double sum_mfa = 0.0;
+      std::vector<double> mfe_values;
+      std::vector<double> mfa_values;
+    };
+    std::map<std::pair<std::string, std::string>, BucketAgg> per_symbol_agg;
+    std::map<std::string, BucketAgg> merged_agg;
+    for (const auto& row : outcomes) {
+      auto& agg = per_symbol_agg[{row.symbol, row.bucket_key}];
+      agg.count += 1;
+      agg.sum_ret_net += row.ret_net;
+      agg.sum_mfe += row.mfe;
+      agg.sum_mfa += row.mfa;
+      agg.mfe_values.push_back(row.mfe);
+      agg.mfa_values.push_back(row.mfa);
+
+      auto& merged = merged_agg[row.bucket_key];
+      merged.count += 1;
+      merged.sum_ret_net += row.ret_net;
+      merged.sum_mfe += row.mfe;
+      merged.sum_mfa += row.mfa;
+      merged.mfe_values.push_back(row.mfe);
+      merged.mfa_values.push_back(row.mfa);
+    }
+
+    std::vector<std::string> metric_emit;
+    const auto* emit_v = sre::ResolvePointer(plan, "/outputs/layer3/metrics/per_bucket/emit");
+    if (emit_v && emit_v->IsArray()) {
+      for (const auto& item : emit_v->AsArray().items) {
+        if (item.IsString() && !item.AsString().empty()) {
+          metric_emit.push_back(item.AsString());
+        }
+      }
+    }
+    if (metric_emit.empty()) {
+      metric_emit = {"n_trades", "EV", "mean_mfe", "mean_mfa"};
+    }
+
+    const auto parse_pct_metric = [](std::string_view metric, std::string_view prefix, double& q_out) -> bool {
+      if (metric.rfind(prefix, 0) != 0) {
+        return false;
+      }
+      std::string tail(metric.substr(prefix.size()));
+      if (tail.empty()) {
+        return false;
+      }
+      double pct = 0.0;
+      if (!ParseDoubleStrict(tail, pct)) {
+        return false;
+      }
+      pct = std::max(0.0, std::min(100.0, pct));
+      q_out = pct / 100.0;
+      return true;
+    };
+
+    const auto metric_value = [&](const BucketAgg& agg, std::string_view metric) -> std::string {
+      if (metric == "n_trades") {
+        return std::to_string(agg.count);
+      }
+      if (agg.count <= 0) {
+        return "";
+      }
+      if (metric == "EV") {
+        return FormatNumber(agg.sum_ret_net / static_cast<double>(agg.count));
+      }
+      if (metric == "mean_mfe") {
+        return FormatNumber(agg.sum_mfe / static_cast<double>(agg.count));
+      }
+      if (metric == "mean_mfa") {
+        return FormatNumber(agg.sum_mfa / static_cast<double>(agg.count));
+      }
+      double q = 0.0;
+      if (parse_pct_metric(metric, "mfe_p", q)) {
+        return FormatNumber(QuantileValue(agg.mfe_values, q));
+      }
+      if (parse_pct_metric(metric, "mfa_p", q)) {
+        return FormatNumber(QuantileValue(agg.mfa_values, q));
+      }
+      return "";
+    };
+
+    std::vector<std::string> headers = {"symbol", "bucket_key"};
+    headers.insert(headers.end(), metric_emit.begin(), metric_emit.end());
+
+    const bool per_symbol = PathTemplateUsesSymbol(bucket_path);
+    if (per_symbol) {
+      for (const auto& symbol : symbols) {
+        std::vector<std::vector<std::string>> rows;
+        for (const auto& [key, agg] : per_symbol_agg) {
+          if (key.first != symbol || agg.count <= 0) {
+            continue;
+          }
+          std::vector<std::string> out_row = {symbol, key.second};
+          for (const auto& metric : metric_emit) {
+            out_row.push_back(metric_value(agg, metric));
+          }
+          rows.push_back(std::move(out_row));
+        }
+        WriteCsvFile(ResolvePlanOutputPath(bucket_path, repo_root, symbol), headers, rows);
+      }
+    } else {
+      std::vector<std::vector<std::string>> rows;
+      for (const auto& [bucket_key, agg] : merged_agg) {
+        if (agg.count <= 0) {
+          continue;
+        }
+        std::vector<std::string> out_row = {"ALL", bucket_key};
+        for (const auto& metric : metric_emit) {
+          out_row.push_back(metric_value(agg, metric));
+        }
+        rows.push_back(std::move(out_row));
+      }
+      WriteCsvFile(ResolvePlanOutputPath(bucket_path, repo_root, ""), headers, rows);
+    }
+  }
+
+  return true;
+}
+
+bool EmitDatasetOutputs(
+    const JsonValue& plan,
+    const std::filesystem::path& repo_root,
+    sre::layers::DiagnosticSink& sink,
+    std::unordered_map<std::string, std::vector<SyntheticBar>>& layer2_bars_by_symbol) {
+  const auto* format_v = sre::ResolvePointer(plan, "/outputs/dataset/format");
+  const auto* path_v = sre::ResolvePointer(plan, "/outputs/dataset/path");
+  if (!format_v || !format_v->IsString() || !path_v || !path_v->IsString() || path_v->AsString().empty()) {
+    return true;
+  }
+
+  const std::string dataset_format = format_v->AsString();
+  const std::string raw_path = path_v->AsString();
+  const auto fields = DatasetFieldsFromPlan(plan);
+  if (fields.empty()) {
+    return true;
+  }
+
+  const std::string dataset_source = DatasetSourceFromPlan(plan);
+  if (dataset_source == "bars") {
+    return EmitBarsDatasetLegacy(plan, repo_root, dataset_format, raw_path, fields, sink);
+  }
+  if (dataset_source == "layer2_event_emitter") {
+    return EmitLayer2EventDataset(plan, repo_root, dataset_format, raw_path, fields, sink, layer2_bars_by_symbol);
+  }
+  EmitRuntimeFeatureError(
+      sink,
+      "E_IO_OUTPUT_CONFIG_INVALID",
+      "CHK_DATASET_SOURCE",
+      "Unknown outputs.dataset.source value.",
+      "bars|layer2_event_emitter",
+      dataset_source,
+      "/outputs/dataset/source",
+      "Set outputs.dataset.source to bars or layer2_event_emitter.");
+  return false;
 }
 
 void WriteJsonFile(const std::filesystem::path& path, const JsonValue& value) {
@@ -1805,9 +3349,6 @@ int Engine::ValidatePlanFile(
     }
   }
 
-  sink.WriteJsonl(diagnostics_jsonl);
-  sink.WriteHumanSummary(diagnostics_summary);
-
   if (final_ok && artifact_emission_requested) {
     std::filesystem::path base_dir = JsonStringAt(result.cnf_plan, "/outputs/artifacts/base_dir", "artifacts");
     if (base_dir.is_relative()) {
@@ -1823,12 +3364,22 @@ int Engine::ValidatePlanFile(
 
     WriteJsonFile(base_dir / "execution_dag.json", execution_dag);
     WriteJsonFile(base_dir / "lineage_dag.json", lineage_dag);
-    EmitDatasetOutputs(result.cnf_plan, repo_root_);
+    std::unordered_map<std::string, std::vector<SyntheticBar>> layer2_bars_by_symbol;
+    if (!EmitDatasetOutputs(result.cnf_plan, repo_root_, sink, layer2_bars_by_symbol)) {
+      final_ok = false;
+    }
+
+    if (final_ok) {
+      const std::vector<std::string> symbols = PlanUniverseSymbols(result.cnf_plan);
+      if (!ComputeLayer3Augmentation(result.cnf_plan, repo_root_, symbols, layer2_bars_by_symbol, sink)) {
+        final_ok = false;
+      }
+    }
 
     const bool write_manifest = JsonBoolAt(result.cnf_plan, "/outputs/artifacts/write_run_manifest", true);
     const bool write_metrics = JsonBoolAt(result.cnf_plan, "/outputs/artifacts/write_metrics_summary", true);
 
-    if (write_manifest) {
+    if (final_ok && write_manifest) {
       std::vector<std::string> layers_validated;
       if (!only_layers.empty()) {
         layers_validated = only_layers;
@@ -1847,7 +3398,7 @@ int Engine::ValidatePlanFile(
       WriteJsonFile(base_dir / "run_manifest.json", JsonValue(std::move(manifest)));
     }
 
-    if (write_metrics) {
+    if (final_ok && write_metrics) {
       JsonValue::Object metrics;
       metrics.fields["diagnostic_count"] = static_cast<double>(sink.Items().size());
       metrics.fields["error_count"] = static_cast<double>(sink.HasErrors() ? 1 : 0);
@@ -1855,6 +3406,9 @@ int Engine::ValidatePlanFile(
       WriteJsonFile(base_dir / "metrics_summary.json", JsonValue(std::move(metrics)));
     }
   }
+
+  sink.WriteJsonl(diagnostics_jsonl);
+  sink.WriteHumanSummary(diagnostics_summary);
 
   return final_ok ? 0 : 2;
 }

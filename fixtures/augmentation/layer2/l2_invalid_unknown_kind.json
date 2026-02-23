@@ -1,0 +1,91 @@
+{
+  "version": 262,
+  "plan_kind": "sierra_research_engine.plan",
+  "plan_io": {
+    "format": "json"
+  },
+  "universe": {
+    "source": "inline",
+    "symbols": [
+      "ES"
+    ]
+  },
+  "execution": {
+    "worker_charts": [
+      2
+    ],
+    "permissions": {
+      "allow_filesystem_write": true
+    },
+    "backend": {
+      "type": "sierra_chart",
+      "sierra_chart": {}
+    },
+    "layer2": {
+      "enabled": true,
+      "mode": "authoritative_events",
+      "indicator_dag": {
+        "nodes": {
+          "a": {
+            "kind": "mystery_op"
+          }
+        }
+      },
+      "event_emitter": {
+        "trigger_node": "a",
+        "emit_mode": "on_true",
+        "emit_columns": [
+          {
+            "name": "signal",
+            "type": "bool",
+            "node": "a"
+          }
+        ]
+      }
+    }
+  },
+  "studies": {
+    "ema_fast": {
+      "mode": "managed",
+      "study_id": 1,
+      "outputs": {
+        "value": {
+          "subgraph": 0
+        }
+      }
+    }
+  },
+  "chains": {
+    "main": {
+      "steps": [
+        {
+          "kind": "emit",
+          "from": "@study.ema_fast.value",
+          "as": "ema"
+        }
+      ]
+    }
+  },
+  "outputs": {
+    "dataset": {
+      "format": "csv",
+      "path": "__TMP__/l2_invalid/unknown_kind.csv",
+      "source": "layer2_event_emitter",
+      "fields": [
+        {
+          "name": "symbol",
+          "ref": "@event.symbol"
+        }
+      ]
+    },
+    "artifacts": {
+      "enabled": true,
+      "base_dir": "__TMP__/meta",
+      "write_run_manifest": true,
+      "write_metrics_summary": true
+    }
+  },
+  "meta": {
+    "fixture_id": "augmentation_l2_invalid_unknown_kind"
+  }
+}

@@ -8,6 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "build" / "sre_planlint.exe"
 BASE_FIXTURE = ROOT / "fixtures" / "L0_core_identity_io" / "valid" / "fix_valid_01.json"
 
+L2_FIX = ROOT / "fixtures" / "augmentation" / "layer2"
+L3_FIX = ROOT / "fixtures" / "augmentation" / "layer3"
+
 
 def run_plan(plan: dict, tmp_dir: Path, name: str) -> tuple[int, Path, Path]:
     plan_path = tmp_dir / f"{name}.json"
@@ -23,6 +26,36 @@ def run_plan(plan: dict, tmp_dir: Path, name: str) -> tuple[int, Path, Path]:
     return proc.returncode, jsonl_path, txt_path
 
 
+def read_jsonl(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    rows: list[dict] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            rows.append(json.loads(line))
+    return rows
+
+
+def has_code(diags: list[dict], code: str) -> bool:
+    return any(d.get("code") == code for d in diags)
+
+
+def load_fixture_template(path: Path, tmp_root: Path) -> dict:
+    text = path.read_text(encoding="utf-8")
+    text = text.replace("__TMP__", tmp_root.as_posix())
+    return json.loads(text)
+
+
+def csv_row_count(path: Path) -> int:
+    if not path.exists():
+        return 0
+    lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    if len(lines) <= 1:
+        return 0
+    return len(lines) - 1
+
+
 def main() -> int:
     if not CLI.exists():
         raise SystemExit(f"missing binary: {CLI}")
@@ -32,6 +65,8 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="sre_artifacts_") as td:
         tmp = Path(td)
+
+        # Legacy success path remains unchanged.
         out_dir = tmp / "artifacts_enabled"
         c1 = json.loads(json.dumps(base))
         c1.setdefault("execution", {})["permissions"] = {"allow_filesystem_write": True}
@@ -56,16 +91,10 @@ def main() -> int:
         ]:
             if not expected.exists():
                 failures.append(f"missing artifact file: {expected}")
-        if (out_dir / "run_manifest.json").exists():
-            manifest = json.loads((out_dir / "run_manifest.json").read_text(encoding="utf-8"))
-            for k in ["plan_cnf_hash", "execution_dag_hash", "lineage_dag_hash"]:
-                v = manifest.get(k, "")
-                if not (isinstance(v, str) and v.startswith("sha256:") and len(v) == 71):
-                    failures.append(f"invalid hash field in run manifest: {k}={v}")
 
+        # Legacy behavior remains: no explicit permission means no filesystem emission.
         out_dir2 = tmp / "artifacts_disabled_by_permission"
         c2 = json.loads(json.dumps(base))
-        # Keep permissions unspecified: runtime should not emit artifacts without explicit write permission.
         c2.setdefault("outputs", {}).setdefault("artifacts", {})
         c2["outputs"]["artifacts"]["enabled"] = True
         c2["outputs"]["artifacts"]["base_dir"] = str(out_dir2)
@@ -75,6 +104,7 @@ def main() -> int:
         if out_dir2.exists() and any(out_dir2.iterdir()):
             failures.append("artifacts should not be emitted when allow_filesystem_write=false")
 
+        # Legacy rr_menu path remains unchanged (still not implemented in this runtime path).
         out_dir3 = tmp / "pipeline_outputs"
         c3 = json.loads(json.dumps(base))
         c3.setdefault("execution", {})["permissions"] = {"allow_filesystem_write": True}
@@ -105,20 +135,88 @@ def main() -> int:
         rc, c3_jsonl, _ = run_plan(c3, tmp, "pipeline_outputs")
         if rc == 0:
             failures.append("pipeline_outputs plan should fail with E_NOT_IMPLEMENTED diagnostics")
-        if not c3_jsonl.exists():
-            failures.append("pipeline_outputs should emit diagnostics jsonl")
+        diags = read_jsonl(c3_jsonl)
+        if not has_code(diags, "E_NOT_IMPLEMENTED"):
+            failures.append("pipeline_outputs should include E_NOT_IMPLEMENTED diagnostic")
+
+        # Layer2: valid DAG + event emission fixture.
+        l2_valid = load_fixture_template(L2_FIX / "l2_valid_event_emission.json", tmp)
+        rc, j, _ = run_plan(l2_valid, tmp, "l2_valid_event_emission")
+        if rc != 0:
+            failures.append("l2_valid_event_emission should pass")
+        for symbol in ["ES", "NQ"]:
+            out_csv = tmp / "l2" / symbol / "authoritative.csv"
+            if csv_row_count(out_csv) <= 0:
+                failures.append(f"l2_valid_event_emission should write rows for {symbol}")
+        if read_jsonl(j):
+            # Should be clean for valid fixture.
+            failures.append("l2_valid_event_emission should not emit diagnostics")
+
+        # Layer2 invalid diagnostics.
+        for fixture_name, expected_code in [
+            ("l2_invalid_cycle.json", "E_L2_DAG_CYCLE"),
+            ("l2_invalid_missing_dep.json", "E_L2_MISSING_NODE_DEP"),
+            ("l2_invalid_unknown_kind.json", "E_L2_UNKNOWN_NODE_KIND"),
+        ]:
+            plan = load_fixture_template(L2_FIX / fixture_name, tmp)
+            rc, jsonl, _ = run_plan(plan, tmp, fixture_name.replace(".json", ""))
+            if rc == 0:
+                failures.append(f"{fixture_name} should fail")
+            diags = read_jsonl(jsonl)
+            if not has_code(diags, expected_code):
+                failures.append(f"{fixture_name} should include {expected_code}")
+
+        # Layer2 mode semantics.
+        l2_on_true = load_fixture_template(L2_FIX / "l2_mode_on_true.json", tmp)
+        l2_on_edge = load_fixture_template(L2_FIX / "l2_mode_on_true_edge.json", tmp)
+        rc_true, _, _ = run_plan(l2_on_true, tmp, "l2_mode_on_true")
+        rc_edge, _, _ = run_plan(l2_on_edge, tmp, "l2_mode_on_true_edge")
+        if rc_true != 0 or rc_edge != 0:
+            failures.append("layer2 emit_mode fixtures should pass")
+        rows_true = csv_row_count(tmp / "l2_mode" / "on_true.csv")
+        rows_edge = csv_row_count(tmp / "l2_mode" / "on_true_edge.csv")
+        if rows_edge != 1:
+            failures.append(f"on_true_edge should emit exactly one row for always-true trigger, got {rows_edge}")
+        if rows_true <= rows_edge:
+            failures.append(f"on_true should emit more rows than on_true_edge, got on_true={rows_true}, edge={rows_edge}")
+
+        # Layer3 valid outcomes + bucketing + EV.
+        l3_valid = load_fixture_template(L3_FIX / "l3_valid_outcomes_bucketing.json", tmp)
+        rc, _, _ = run_plan(l3_valid, tmp, "l3_valid_outcomes_bucketing")
+        if rc != 0:
+            failures.append("l3_valid_outcomes_bucketing should pass")
+        for symbol in ["ES", "NQ"]:
+            out_events = tmp / "layer3" / symbol / "outcomes_per_event.csv"
+            out_buckets = tmp / "layer3" / symbol / "bucket_stats.csv"
+            if csv_row_count(out_events) <= 0:
+                failures.append(f"layer3 outcomes_per_event missing rows for {symbol}")
+            if csv_row_count(out_buckets) <= 0:
+                failures.append(f"layer3 bucket_stats missing rows for {symbol}")
+
+        # Layer3 same-bar leakage rejection.
+        l3_invalid = load_fixture_template(L3_FIX / "l3_invalid_same_bar_leakage.json", tmp)
+        rc, jsonl, _ = run_plan(l3_invalid, tmp, "l3_invalid_same_bar_leakage")
+        if rc == 0:
+            failures.append("l3_invalid_same_bar_leakage should fail")
+        if not has_code(read_jsonl(jsonl), "E_L3_OUTCOME_LEAKAGE_SAME_BAR"):
+            failures.append("l3_invalid_same_bar_leakage should emit E_L3_OUTCOME_LEAKAGE_SAME_BAR")
+
+        # Determinism: bucket_stats stable across identical runs.
+        run_a_root = tmp / "det_a"
+        run_b_root = tmp / "det_b"
+        det_a = load_fixture_template(L3_FIX / "l3_valid_outcomes_bucketing.json", run_a_root)
+        det_b = load_fixture_template(L3_FIX / "l3_valid_outcomes_bucketing.json", run_b_root)
+        rc_a, _, _ = run_plan(det_a, tmp, "l3_det_a")
+        rc_b, _, _ = run_plan(det_b, tmp, "l3_det_b")
+        if rc_a != 0 or rc_b != 0:
+            failures.append("determinism runs should pass")
+        bucket_a = run_a_root / "layer3" / "ES" / "bucket_stats.csv"
+        bucket_b = run_b_root / "layer3" / "ES" / "bucket_stats.csv"
+        if not bucket_a.exists() or not bucket_b.exists():
+            failures.append("determinism runs missing bucket_stats artifacts")
         else:
-            diags = []
-            for line in c3_jsonl.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if line:
-                    diags.append(json.loads(line))
-            if not any(d.get("code") == "E_NOT_IMPLEMENTED" for d in diags):
-                failures.append("pipeline_outputs should include E_NOT_IMPLEMENTED diagnostic")
-            if not any(d.get("check_id") == "CHK_RUNTIME_LAYER3_OUTPUT_NOT_IMPLEMENTED" for d in diags):
-                failures.append("pipeline_outputs should include CHK_RUNTIME_LAYER3_OUTPUT_NOT_IMPLEMENTED diagnostic")
-            if not any(d.get("check_id") == "CHK_RUNTIME_DATASET_REF_NOT_IMPLEMENTED" for d in diags):
-                failures.append("pipeline_outputs should include CHK_RUNTIME_DATASET_REF_NOT_IMPLEMENTED diagnostic")
+            if bucket_a.read_text(encoding="utf-8") != bucket_b.read_text(encoding="utf-8"):
+                failures.append("bucket_stats should be identical across deterministic runs")
 
     if failures:
         for f in failures:

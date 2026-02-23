@@ -1,0 +1,158 @@
+{
+  "version": 262,
+  "plan_kind": "sierra_research_engine.plan",
+  "plan_io": {
+    "format": "json"
+  },
+  "universe": {
+    "source": "inline",
+    "symbols": [
+      "ES",
+      "NQ"
+    ]
+  },
+  "execution": {
+    "worker_charts": [
+      2
+    ],
+    "permissions": {
+      "allow_filesystem_write": true
+    },
+    "backend": {
+      "type": "sierra_chart",
+      "sierra_chart": {}
+    },
+    "layer2": {
+      "enabled": true,
+      "mode": "authoritative_events",
+      "indicator_dag": {
+        "nodes": {
+          "always_true": {
+            "kind": "param",
+            "type": "bool",
+            "value": true
+          }
+        }
+      },
+      "event_emitter": {
+        "trigger_node": "always_true",
+        "emit_mode": "on_true",
+        "cooldown_bars": 2,
+        "emit_columns": [
+          {
+            "name": "entry_price",
+            "type": "float",
+            "ref": "@bar.close"
+          },
+          {
+            "name": "bar_datetime",
+            "type": "datetime",
+            "ref": "@bar.datetime"
+          }
+        ]
+      }
+    }
+  },
+  "studies": {
+    "ema_fast": {
+      "mode": "managed",
+      "study_id": 1,
+      "outputs": {
+        "value": {
+          "subgraph": 0
+        }
+      }
+    }
+  },
+  "chains": {
+    "main": {
+      "steps": [
+        {
+          "kind": "emit",
+          "from": "@study.ema_fast.value",
+          "as": "ema"
+        }
+      ]
+    }
+  },
+  "outputs": {
+    "dataset": {
+      "format": "csv",
+      "path": "__TMP__/layer3/{symbol}/authoritative.csv",
+      "source": "layer2_event_emitter",
+      "fields": [
+        {
+          "name": "symbol",
+          "ref": "@event.symbol"
+        },
+        {
+          "name": "bar_index",
+          "ref": "@event.bar_index"
+        },
+        {
+          "name": "entry_price",
+          "ref": "@event.entry_price"
+        }
+      ]
+    },
+    "layer3": {
+      "enabled": true,
+      "mode": "bucket_eval",
+      "inputs": {
+        "layer2_authoritative_csv": "__TMP__/layer3/{symbol}/authoritative.csv"
+      },
+      "eligibility": {},
+      "bucketing": {
+        "dimensions": [
+          {
+            "field": "entry_price",
+            "method": "quantile",
+            "q": [
+              0.5
+            ]
+          }
+        ]
+      },
+      "outcomes": {
+        "enabled": true,
+        "entry_price_field": "entry_price",
+        "horizon": {
+          "type": "bars",
+          "value": 3
+        },
+        "price_fields": {
+          "high": "high",
+          "low": "low",
+          "close": "close"
+        },
+        "cost_model": {
+          "type": "fixed_bps",
+          "bps": 2.0
+        }
+      },
+      "metrics": {
+        "per_bucket": {
+          "emit": [
+            "n_trades",
+            "EV"
+          ]
+        }
+      },
+      "artifacts": {
+        "rr_buckets": "__TMP__/layer3/{symbol}/rr_unused.csv",
+        "decision_audit": "__TMP__/layer3/{symbol}/audit_unused.csv",
+        "outcomes_per_event": "__TMP__/layer3/{symbol}/outcomes_per_event.csv",
+        "bucket_stats": "__TMP__/layer3/{symbol}/bucket_stats.csv"
+      }
+    },
+    "artifacts": {
+      "enabled": true,
+      "base_dir": "__TMP__/meta",
+      "write_run_manifest": true,
+      "write_metrics_summary": true
+    }
+  },
+  "meta": {
+    "fixture_id": "augmentation_l3_valid_outcomes_bucketing"
+  }
+}
