@@ -978,6 +978,294 @@ void ExecuteManifestChecks(
   }
 }
 
+std::string ReplaceAll(std::string text, std::string_view needle, std::string_view replacement) {
+  size_t pos = 0;
+  while ((pos = text.find(needle, pos)) != std::string::npos) {
+    text.replace(pos, needle.size(), replacement);
+    pos += replacement.size();
+  }
+  return text;
+}
+
+std::filesystem::path ResolvePlanOutputPath(const std::string& raw_path, const std::filesystem::path& repo_root, std::string_view symbol) {
+  std::string expanded = raw_path;
+  expanded = ReplaceAll(std::move(expanded), "{symbol}", symbol);
+  std::filesystem::path out = expanded;
+  if (out.is_relative()) {
+    out = repo_root / out;
+  }
+  return out;
+}
+
+bool PathTemplateUsesSymbol(const std::string& raw_path) { return raw_path.find("{symbol}") != std::string::npos; }
+
+std::vector<std::string> PlanUniverseSymbols(const JsonValue& plan) {
+  std::vector<std::string> symbols;
+  const auto* universe_symbols = sre::ResolvePointer(plan, "/universe/symbols");
+  if (universe_symbols && universe_symbols->IsArray()) {
+    for (const auto& s : universe_symbols->AsArray().items) {
+      if (s.IsString() && !s.AsString().empty()) {
+        symbols.push_back(s.AsString());
+      }
+    }
+  }
+  if (symbols.empty()) {
+    symbols.push_back("UNSPECIFIED");
+  }
+  return symbols;
+}
+
+struct DatasetFieldSpec {
+  std::string name;
+  std::string source_ref;
+};
+
+std::vector<DatasetFieldSpec> DatasetFieldsFromPlan(const JsonValue& plan) {
+  std::vector<DatasetFieldSpec> fields;
+  const auto* field_array = sre::ResolvePointer(plan, "/outputs/dataset/fields");
+  if (!field_array || !field_array->IsArray()) {
+    return fields;
+  }
+  for (size_t i = 0; i < field_array->AsArray().items.size(); ++i) {
+    const auto& field = field_array->AsArray().items[i];
+    if (!field.IsObject()) {
+      continue;
+    }
+
+    const auto* name = ObjectGet(field, "name");
+    const auto* id = ObjectGet(field, "id");
+    const auto* ref = ObjectGet(field, "ref");
+    const auto* from = ObjectGet(field, "from");
+
+    DatasetFieldSpec spec;
+    if (name && name->IsString() && !name->AsString().empty()) {
+      spec.name = name->AsString();
+    } else if (id && id->IsString() && !id->AsString().empty()) {
+      spec.name = id->AsString();
+    } else {
+      spec.name = "field_" + std::to_string(i);
+    }
+
+    if (ref && ref->IsString()) {
+      spec.source_ref = ref->AsString();
+    } else if (from && from->IsString()) {
+      spec.source_ref = from->AsString();
+    }
+
+    fields.push_back(std::move(spec));
+  }
+  return fields;
+}
+
+bool IsImplementedDatasetRuntimeRef(std::string_view source_ref) {
+  if (source_ref.empty()) {
+    return true;
+  }
+  if (source_ref[0] != '@') {
+    return true;
+  }
+  return source_ref == "@symbol";
+}
+
+bool AppendArtifactEmissionNotImplementedDiagnostics(const JsonValue& plan, sre::layers::DiagnosticSink& sink) {
+  bool ok = true;
+  auto emit = [&](std::string check_id, std::string reason, std::string actual, std::string pointer) {
+    sre::layers::EmitLayerError(
+        sink,
+        "outputs_repro",
+        "E_NOT_IMPLEMENTED",
+        std::move(check_id),
+        "CHKGRP_PLAN_AST_SHAPE",
+        std::move(reason),
+        "implemented runtime feature",
+        std::move(actual),
+        {std::move(pointer)},
+        "Implement runtime execution path for this feature before enabling artifact emission.",
+        "runtime");
+    ok = false;
+  };
+
+  const auto* field_array = sre::ResolvePointer(plan, "/outputs/dataset/fields");
+  if (field_array && field_array->IsArray()) {
+    for (size_t i = 0; i < field_array->AsArray().items.size(); ++i) {
+      const auto& field = field_array->AsArray().items[i];
+      if (!field.IsObject()) {
+        continue;
+      }
+      const auto* ref = ObjectGet(field, "ref");
+      const auto* from = ObjectGet(field, "from");
+      if (ref && ref->IsString() && !IsImplementedDatasetRuntimeRef(ref->AsString())) {
+        emit(
+            "CHK_RUNTIME_DATASET_REF_NOT_IMPLEMENTED",
+            "Dataset field reference is declared but runtime execution is not implemented.",
+            ref->AsString(),
+            "/outputs/dataset/fields/" + std::to_string(i) + "/ref");
+      }
+      if (from && from->IsString() && !IsImplementedDatasetRuntimeRef(from->AsString())) {
+        emit(
+            "CHK_RUNTIME_DATASET_REF_NOT_IMPLEMENTED",
+            "Dataset field source is declared but runtime execution is not implemented.",
+            from->AsString(),
+            "/outputs/dataset/fields/" + std::to_string(i) + "/from");
+      }
+    }
+  }
+
+  const auto* layer3 = sre::ResolvePointer(plan, "/outputs/layer3");
+  if (layer3 && layer3->IsObject()) {
+    const auto* enabled = ObjectGet(*layer3, "enabled");
+    const bool layer3_enabled = (enabled == nullptr) || !enabled->IsBool() || enabled->AsBool();
+    if (layer3_enabled) {
+      emit(
+          "CHK_RUNTIME_LAYER3_OUTPUT_NOT_IMPLEMENTED",
+          "Layer3 output artifact emission is declared but not implemented in runtime.",
+          "outputs.layer3.enabled=true",
+          "/outputs/layer3");
+    }
+  }
+
+  return ok;
+}
+
+std::string ResolveDatasetValue(std::string_view source_ref, std::string_view symbol) {
+  if (source_ref == "@symbol") {
+    return std::string(symbol);
+  }
+  if (!source_ref.empty() && source_ref[0] == '@') {
+    throw std::runtime_error("E_NOT_IMPLEMENTED: dataset runtime reference is not implemented: " + std::string(source_ref));
+  }
+  return std::string(source_ref);
+}
+
+std::string EscapeCsv(std::string_view cell) {
+  bool needs_quotes = false;
+  for (char c : cell) {
+    if (c == ',' || c == '"' || c == '\n' || c == '\r') {
+      needs_quotes = true;
+      break;
+    }
+  }
+  if (!needs_quotes) {
+    return std::string(cell);
+  }
+  std::string out = "\"";
+  for (char c : cell) {
+    if (c == '"') {
+      out += "\"\"";
+    } else {
+      out.push_back(c);
+    }
+  }
+  out.push_back('"');
+  return out;
+}
+
+void WriteCsvFile(
+    const std::filesystem::path& path,
+    const std::vector<std::string>& headers,
+    const std::vector<std::vector<std::string>>& rows) {
+  std::filesystem::create_directories(path.parent_path());
+  std::ofstream out(path);
+  if (!out) {
+    throw std::runtime_error("Failed to write CSV file: " + path.string());
+  }
+
+  for (size_t i = 0; i < headers.size(); ++i) {
+    if (i > 0) {
+      out << ",";
+    }
+    out << EscapeCsv(headers[i]);
+  }
+  out << "\n";
+
+  for (const auto& row : rows) {
+    for (size_t i = 0; i < row.size(); ++i) {
+      if (i > 0) {
+        out << ",";
+      }
+      out << EscapeCsv(row[i]);
+    }
+    out << "\n";
+  }
+}
+
+void WriteJsonlFile(
+    const std::filesystem::path& path,
+    const std::vector<DatasetFieldSpec>& fields,
+    const std::vector<std::vector<std::string>>& rows) {
+  std::filesystem::create_directories(path.parent_path());
+  std::ofstream out(path);
+  if (!out) {
+    throw std::runtime_error("Failed to write JSONL file: " + path.string());
+  }
+  for (const auto& row : rows) {
+    JsonValue::Object obj;
+    for (size_t i = 0; i < fields.size(); ++i) {
+      const std::string value = i < row.size() ? row[i] : "";
+      obj.fields[fields[i].name] = value;
+    }
+    out << DumpCanonicalJson(JsonValue(std::move(obj))) << "\n";
+  }
+}
+
+void EmitDatasetOutputs(const JsonValue& plan, const std::filesystem::path& repo_root) {
+  const auto* format_v = sre::ResolvePointer(plan, "/outputs/dataset/format");
+  const auto* path_v = sre::ResolvePointer(plan, "/outputs/dataset/path");
+  if (!format_v || !format_v->IsString() || !path_v || !path_v->IsString() || path_v->AsString().empty()) {
+    return;
+  }
+
+  const std::string dataset_format = format_v->AsString();
+  const std::string raw_path = path_v->AsString();
+  const auto fields = DatasetFieldsFromPlan(plan);
+  if (fields.empty()) {
+    return;
+  }
+
+  std::vector<std::string> headers;
+  headers.reserve(fields.size());
+  for (const auto& field : fields) {
+    headers.push_back(field.name);
+  }
+
+  const std::vector<std::string> symbols = PlanUniverseSymbols(plan);
+
+  auto build_row = [&](std::string_view symbol) {
+    std::vector<std::string> row;
+    row.reserve(fields.size());
+    for (const auto& field : fields) {
+      row.push_back(ResolveDatasetValue(field.source_ref, symbol));
+    }
+    return row;
+  };
+
+  const bool per_symbol = PathTemplateUsesSymbol(raw_path);
+  if (per_symbol) {
+    for (const auto& symbol : symbols) {
+      const auto out_path = ResolvePlanOutputPath(raw_path, repo_root, symbol);
+      const std::vector<std::vector<std::string>> rows{build_row(symbol)};
+      if (dataset_format == "csv") {
+        WriteCsvFile(out_path, headers, rows);
+      } else if (dataset_format == "jsonl") {
+        WriteJsonlFile(out_path, fields, rows);
+      }
+    }
+    return;
+  }
+
+  std::vector<std::vector<std::string>> rows;
+  rows.reserve(symbols.size());
+  for (const auto& symbol : symbols) {
+    rows.push_back(build_row(symbol));
+  }
+  const auto out_path = ResolvePlanOutputPath(raw_path, repo_root, "");
+  if (dataset_format == "csv") {
+    WriteCsvFile(out_path, headers, rows);
+  } else if (dataset_format == "jsonl") {
+    WriteJsonlFile(out_path, fields, rows);
+  }
+}
+
 void WriteJsonFile(const std::filesystem::path& path, const JsonValue& value) {
   std::filesystem::create_directories(path.parent_path());
   std::ofstream out(path);
@@ -1506,60 +1794,69 @@ int Engine::ValidatePlanFile(
   for (const auto& d : result.diagnostics) {
     sink.Emit(d);
   }
+  bool final_ok = result.status.ok;
+  const bool artifacts_enabled = JsonBoolAt(result.cnf_plan, "/outputs/artifacts/enabled", true);
+  const bool allow_fs_write = JsonBoolAt(result.cnf_plan, "/execution/permissions/allow_filesystem_write", false);
+  const bool artifact_emission_requested = artifacts_enabled && allow_fs_write;
+
+  if (final_ok && artifact_emission_requested) {
+    if (!AppendArtifactEmissionNotImplementedDiagnostics(result.cnf_plan, sink)) {
+      final_ok = false;
+    }
+  }
+
   sink.WriteJsonl(diagnostics_jsonl);
   sink.WriteHumanSummary(diagnostics_summary);
 
-  if (result.status.ok) {
-    const bool artifacts_enabled = JsonBoolAt(result.cnf_plan, "/outputs/artifacts/enabled", true);
-    const bool allow_fs_write = JsonBoolAt(result.cnf_plan, "/execution/permissions/allow_filesystem_write", false);
-    if (artifacts_enabled && allow_fs_write) {
-      std::filesystem::path base_dir = JsonStringAt(result.cnf_plan, "/outputs/artifacts/base_dir", "artifacts");
-      if (base_dir.is_relative()) {
-        base_dir = repo_root_ / base_dir;
-      }
-      std::filesystem::create_directories(base_dir);
+  if (final_ok && artifact_emission_requested) {
+    std::filesystem::path base_dir = JsonStringAt(result.cnf_plan, "/outputs/artifacts/base_dir", "artifacts");
+    if (base_dir.is_relative()) {
+      base_dir = repo_root_ / base_dir;
+    }
+    std::filesystem::create_directories(base_dir);
 
-      const JsonValue execution_dag = BuildExecutionDag(result.cnf_plan);
-      const JsonValue lineage_dag = BuildLineageDag(result.cnf_plan);
-      const std::string plan_hash = HashCanonicalPlan(result.cnf_plan);
-      const std::string execution_hash = HashCanonicalPlan(execution_dag);
-      const std::string lineage_hash = HashCanonicalPlan(lineage_dag);
+    const JsonValue execution_dag = BuildExecutionDag(result.cnf_plan);
+    const JsonValue lineage_dag = BuildLineageDag(result.cnf_plan);
+    const std::string plan_hash = HashCanonicalPlan(result.cnf_plan);
+    const std::string execution_hash = HashCanonicalPlan(execution_dag);
+    const std::string lineage_hash = HashCanonicalPlan(lineage_dag);
 
-      WriteJsonFile(base_dir / "execution_dag.json", execution_dag);
-      WriteJsonFile(base_dir / "lineage_dag.json", lineage_dag);
+    WriteJsonFile(base_dir / "execution_dag.json", execution_dag);
+    WriteJsonFile(base_dir / "lineage_dag.json", lineage_dag);
+    EmitDatasetOutputs(result.cnf_plan, repo_root_);
 
-      const bool write_manifest = JsonBoolAt(result.cnf_plan, "/outputs/artifacts/write_run_manifest", true);
-      const bool write_metrics = JsonBoolAt(result.cnf_plan, "/outputs/artifacts/write_metrics_summary", true);
+    const bool write_manifest = JsonBoolAt(result.cnf_plan, "/outputs/artifacts/write_run_manifest", true);
+    const bool write_metrics = JsonBoolAt(result.cnf_plan, "/outputs/artifacts/write_metrics_summary", true);
 
-      if (write_manifest) {
-        std::vector<std::string> layers_validated;
-        if (!only_layers.empty()) {
-          layers_validated = only_layers;
-        } else {
-          for (const auto& m : manifests_) {
-            layers_validated.push_back(m.layer_id);
-          }
+    if (write_manifest) {
+      std::vector<std::string> layers_validated;
+      if (!only_layers.empty()) {
+        layers_validated = only_layers;
+      } else {
+        for (const auto& m : manifests_) {
+          layers_validated.push_back(m.layer_id);
         }
-
-        JsonValue::Object manifest;
-        manifest.fields["plan_cnf_hash"] = plan_hash;
-        manifest.fields["execution_dag_hash"] = execution_hash;
-        manifest.fields["lineage_dag_hash"] = lineage_hash;
-        manifest.fields["diagnostic_count"] = static_cast<double>(result.diagnostics.size());
-        manifest.fields["layers_validated"] = JsonValue(JsonArrayFromStrings(layers_validated));
-        WriteJsonFile(base_dir / "run_manifest.json", JsonValue(std::move(manifest)));
       }
 
-      if (write_metrics) {
-        JsonValue::Object metrics;
-        metrics.fields["diagnostic_count"] = static_cast<double>(result.diagnostics.size());
-        metrics.fields["error_count"] = static_cast<double>(sink.HasErrors() ? 1 : 0);
-        metrics.fields["status"] = result.status.ok ? "ok" : "error";
-        WriteJsonFile(base_dir / "metrics_summary.json", JsonValue(std::move(metrics)));
-      }
+      JsonValue::Object manifest;
+      manifest.fields["plan_cnf_hash"] = plan_hash;
+      manifest.fields["execution_dag_hash"] = execution_hash;
+      manifest.fields["lineage_dag_hash"] = lineage_hash;
+      manifest.fields["diagnostic_count"] = static_cast<double>(sink.Items().size());
+      manifest.fields["layers_validated"] = JsonValue(JsonArrayFromStrings(layers_validated));
+      WriteJsonFile(base_dir / "run_manifest.json", JsonValue(std::move(manifest)));
+    }
+
+    if (write_metrics) {
+      JsonValue::Object metrics;
+      metrics.fields["diagnostic_count"] = static_cast<double>(sink.Items().size());
+      metrics.fields["error_count"] = static_cast<double>(sink.HasErrors() ? 1 : 0);
+      metrics.fields["status"] = final_ok ? "ok" : "error";
+      WriteJsonFile(base_dir / "metrics_summary.json", JsonValue(std::move(metrics)));
     }
   }
-  return result.status.ok ? 0 : 2;
+
+  return final_ok ? 0 : 2;
 }
 
 }  // namespace sre

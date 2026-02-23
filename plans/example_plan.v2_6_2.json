@@ -1,0 +1,230 @@
+{
+  "version": 262,
+  "plan_kind": "sierra_research_engine.plan",
+
+  "plan_io": {
+    "format": "json"
+  },
+
+  "compat": {
+    "min_extension_api": 1,
+    "allow_legacy_steps_without_kind": true
+  },
+
+  "meta": {
+    "name": "Layer3 Test Plan v2 — Symbol-Scoped L2 → L3",
+    "description": "Runs Layer2 authoritative research per symbol and feeds the symbol-scoped CSV into Layer3 to emit trade instructions and decision audit artifacts. No unscoped paths.",
+    "tags": ["layer2", "layer3", "symbol_scoped", "authoritative", "rvol"]
+  },
+
+  "universe": {
+    "source": "inline",
+    "symbols": ["WORX", "RIME"],
+    "timeframe": "4h",
+    "date_range": {
+      "start": "2025-01-01",
+      "end": "2026-02-21"
+    }
+  },
+
+  "execution": {
+    "controller_chart": 6,
+    "worker_charts": [2],
+
+    "permissions": {
+      "allow_filesystem_write": true,
+      "allow_network": false
+    },
+
+    "sentinel": {
+      "enabled": true,
+      "study_id": 6,
+      "subgraph": 0,
+      "slot": 6,
+      "ready_value": 2.0,
+      "timeout_cycles": 30
+    },
+
+    "backend": {
+      "type": "sierra_chart",
+      "sierra_chart": {
+        "scheduler_mode": "serial",
+
+        "layout_contract": {
+          "enabled": true,
+          "controller_chart": 6,
+          "workers": [
+            {
+              "chart_number": 2,
+              "required_studies": [
+                {
+                  "study_key": "rvol",
+                  "require_outputs": ["sg1"]
+                }
+              ]
+            }
+          ],
+          "readiness": {
+            "mode": "sentinel"
+          }
+        }
+      }
+    }
+  },
+
+  "studies": {
+    "rvol": {
+      "mode": "bind",
+      "chart_ref": "worker",
+      "study_id": 6,
+      "outputs": {
+        "sg1": {
+          "subgraph": 0,
+          "field": "value"
+        }
+      }
+    }
+  },
+
+  "chains": {
+    "main": {
+      "description": "Environment parity chain — binds RVOL SG1",
+      "steps": [
+        {
+          "kind": "read",
+          "read_refs": ["@study.rvol.sg1"]
+        }
+      ]
+    }
+  },
+
+  "outputs": {
+
+    "dataset": {
+      "format": "csv",
+
+  
+      "path": "artifacts/{symbol}/layer2_authoritative.csv",
+
+      "fields": [
+        {
+          "name": "symbol",
+          "ref": "@symbol",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "bar_datetime",
+          "ref": "@bar.datetime",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "close",
+          "ref": "@bar.close",
+          "type": "float",
+          "nullable": false
+        },
+        {
+          "name": "rvol",
+          "ref": "@study.rvol.sg1",
+          "type": "float",
+          "nullable": true
+        }
+      ]
+    },
+
+"layer3": {
+  "enabled": true,
+
+  "mode": "rr_menu",
+
+  "inputs": {
+    "layer2_authoritative_csv": "artifacts/{symbol}/layer2_authoritative.csv"
+  },
+
+  "eligibility": {
+    "emit_for_all_eligible_buckets": true,
+
+    "rules": [
+      {
+        "id": "min_samples",
+        "scope": "bucket",
+        "field": "total_trades",
+        "op": ">=",
+        "value": 80
+      },
+      {
+        "id": "ev_floor",
+        "scope": "bucket",
+        "field": "EV",
+        "op": ">=",
+        "value": 0.0
+      },
+      {
+        "id": "require_price_quantiles",
+        "scope": "bucket",
+        "field": "p90_mae_price",
+        "op": "not_null"
+      },
+      {
+        "id": "require_entry_price",
+        "scope": "bucket",
+        "field": "avg_entry_price",
+        "op": ">",
+        "value": 0.0
+      }
+    ],
+
+    "quantile_sample_gates": [
+      { "q": 0.95, "min_n": 200 },
+      { "q": 0.90, "min_n": 80 },
+      { "q": 0.80, "min_n": 40 }
+    ]
+  },
+
+  "rr_menu": {
+    "risk_quantiles": [0.80, 0.90, 0.95],
+    "reward_quantiles": [0.50, 0.80, 0.90],
+    "pairing": "cartesian",
+
+    "row_rules": [
+      {
+        "id": "rr_min",
+        "scope": "rr_row",
+        "field": "rr_price",
+        "op": ">=",
+        "value": 1.0
+      }
+    ]
+  },
+
+  "normalization": {
+    "mode": "pct_of_price",
+    "entry_price_field": "avg_entry_price",
+    "emit_raw_price_columns": true,
+    "emit_pct_columns": true
+  },
+
+  "units_contract": {
+    "signal_bucket_units": "signal:rvol",
+    "mae_units": "price",
+    "mfe_units": "price",
+    "enforce_no_bucket_clamp": true
+  },
+
+  "artifacts": {
+    "rr_buckets": "artifacts/{symbol}/layer3_rr_buckets.csv",
+    "decision_audit": "artifacts/{symbol}/layer3_decision_audit.csv"
+  }
+},
+
+
+    "artifacts": {
+      "enabled": true,
+      "base_dir": "artifacts",
+      "write_run_manifest": true,
+      "write_metrics_summary": true
+    }
+  }
+}
